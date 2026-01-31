@@ -1,0 +1,89 @@
+# Created by venv; see https://docs.python.org/3/library/venv.html
+
+
+# --- PYTHON ---
+# Byte-compiled / Optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Entornos virtuales (opcional, pero recomendado)
+venv/
+env/
+.venv/
+
+# Ignorar el venv en la raíz
+bin/
+lib/
+lib64/
+lib64
+include/
+share/
+pyvenv.cfg
+
+lib64/
+
+# Logs de calibración de moteus
+*.log
+
+# Archivos de jupyter/kernels
+share/jupyter/
+
+# --- C++ / C ---
+# Prerrequisitos de compilación
+*.d
+
+# Archivos objeto compilados
+*.o
+*.obj
+
+# Archivos de librerías (Static & Dynamic)
+*.lib
+*.a
+*.dll
+*.so
+*.dylib
+*.bin
+
+# Ejecutables
+*.exe
+*.out
+*.app
+
+# --- SISTEMAS DE CONSTRUCCIÓN (BUILD SYSTEMS) ---
+# Ignora carpetas de compilación en cualquier nivel del proyecto
+build/
+bin/
+dist/
+Debug/
+Release/
+x64/
+x86/
+
+# --- CMAKE (Muy común en C++) ---
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+*.cmake
+
+# --- IDEs / EDITORES (Opcional) ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+Motors/lib/
+Motors/include/
+Motors/bin/
+Motors/lib64
+Motors/moteus-cal-AFQAMU4wUAUgNDlF-20260114T214117.655618.log
+Motors/moteus-cal-AFQAMU4wUAUgNDlF-20260114T223907.416447.log
+Motors/moteus-cal-AFQAMU4wUAUgNDlF-20260115T213946.087282.log
+Motors/share
+Motors/moteus-cal-AFQAMU4wUAUgNDlF-20260114T214117.655618.log
+Motors/moteus-cal-AFQAMU4wUAUgNDlF-20260114T223907.416447.log
+Motors/moteus-cal-AFQAMU4wUAUgNDlF-20260115T213946.087282.log
+Simulation/sam_codes/rex_memory.bin
+Motors/pyvenv.cfg
+
