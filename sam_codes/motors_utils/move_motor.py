@@ -5,7 +5,7 @@ import sys
 from moteus_driver import MoteusInterface
 
 # --- CONFIGURACIÓN DE MODOS ---
-DEBUG_MODE = True  # <--- CAMBIA A FALSE PARA MODO TEXTO SIMPLE
+DEBUG_MODE = False  # <--- CAMBIA A FALSE PARA MODO TEXTO SIMPLE
 
 # --- CONFIGURACIÓN HARDWARE ---
 BUS_MAP = {
@@ -22,7 +22,7 @@ ALL_IDS.sort()
 # Estos valores se pasarán al driver
 KP_SCALE = 1.0
 KD_SCALE = 1.0
-MAX_TORQUE = 12.0 
+MAX_TORQUE = 2.0 
 # Nota: Velocidad y Aceleración límite son gestionadas internamente 
 # por el driver para garantizar seguridad en este wrapper simplificado.
 
