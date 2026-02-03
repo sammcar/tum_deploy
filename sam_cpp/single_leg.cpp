@@ -5,10 +5,10 @@
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <csignal>  // Necesario para capturar Ctrl+C
+#include <atomic>   // Para la variable global segura
 
 #include "moteus.h"
-// #include "moteus/pi3hat_moteus_transport.h"  <-- BORRAR ESTA LÍNEA
-// #include "moteus/fdcanusb.h"                  <-- BORRAR ESTA TAMBIÉN SI ESTÁ
 
 namespace moteus = mjbots::moteus;
 
@@ -18,12 +18,19 @@ const double kMaxTorque = 3.0;
 const double kKp = 1.0; 
 const double kKd = 1.0; 
 
-int main(int argc, char** argv) {
-    // BORRAR TAMBIÉN EL TRUCO DEL DUMMY
-    // volatile auto *dummy = ... 
-    // (void)dummy;
+// Variable global para controlar el bucle
+std::atomic<bool> g_running{true};
 
-    // 1. Procesar argumentos (Esto cargará el Pi3Hat automáticamente)
+// Función que se ejecuta al presionar Ctrl+C
+void SignalHandler(int) {
+    g_running = false;
+}
+
+int main(int argc, char** argv) {
+    // 1. Registrar el manejador de la señal Ctrl+C (SIGINT)
+    std::signal(SIGINT, SignalHandler);
+
+    // 2. Procesar argumentos (Pi3Hat config)
     moteus::Controller::DefaultArgProcess(argc, argv);
 
     moteus::Controller::Options options;
@@ -32,11 +39,12 @@ int main(int argc, char** argv) {
     auto controller = std::make_shared<moteus::Controller>(options);
 
     std::cout << "--- INICIANDO CONTROL MOTOR " << kMotorId << " ---" << std::endl;
+    std::cout << "Presiona Ctrl+C para detener y desenergizar." << std::endl;
     
     auto start_time = std::chrono::steady_clock::now();
-    bool running = true;
 
-    while (running) {
+    // 3. El bucle ahora depende de g_running
+    while (g_running) {
         auto now = std::chrono::steady_clock::now();
         std::chrono::duration<double> elapsed = now - start_time;
         double t_sec = elapsed.count();
@@ -69,7 +77,6 @@ int main(int argc, char** argv) {
             printf("\r[%5.2fs] %-10s | ID:%d Pos: %6.2f", t_sec, phase.c_str(), kMotorId, v.position * 360.0);
             fflush(stdout);
         } else {
-            // Imprimir menos frecuente para no saturar si falla
             static int err_cnt = 0;
             if (err_cnt++ % 100 == 0) printf("\rEsperando respuesta..."); 
             fflush(stdout);
@@ -77,5 +84,18 @@ int main(int argc, char** argv) {
 
         ::usleep(10000); 
     }
+
+    // --- FASE DE APAGADO ---
+    std::cout << "\n\nSaliendo... Enviando comando STOP a ID " << kMotorId << std::endl;
+    
+    // Esto equivale al comando --stop de moteus_tool
+    // Pone el motor en Modo 0 (Stopped), quitando el torque.
+    controller->SetStop();
+
+    // Pequeña pausa para asegurar que el mensaje salga por el CAN Bus
+    ::usleep(50000); 
+
+    std::cout << "Motor desenergizado. Bye." << std::endl;
+
     return 0;
 }
