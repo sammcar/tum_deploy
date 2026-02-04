@@ -55,3 +55,29 @@ target_link_libraries(leg_test
     pi3hat       # CRÍTICO
     fmt::fmt
 )
+
+# Leg Test
+add_executable(test pruebas.cpp)
+target_link_libraries(test 
+    sam_libs 
+    moteus::cpp 
+    pi3hat       # CRÍTICO
+    fmt::fmt
+)
+
+# Leg Test
+add_executable(move move_legs.cpp)
+target_link_libraries(move 
+    sam_libs 
+    moteus::cpp 
+    pi3hat       # CRÍTICO
+    fmt::fmt
+)
+
+add_executable(udp conexion_udp.cpp)
+target_link_libraries(udp 
+    sam_libs 
+    moteus::cpp 
+    pi3hat       # CRÍTICO
+    fmt::fmt
+)
