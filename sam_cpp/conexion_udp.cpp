@@ -8,7 +8,7 @@
 #include <csignal>
 #include <atomic>
 #include <sstream>
-#include <iomanip> // Necesario para la tabla
+#include <iomanip>
 #include <cstring>
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -18,41 +18,78 @@
 
 namespace moteus = mjbots::moteus;
 
-// ================= CONFIGURACIÓN =================
-// IDs a controlar (Pata BL: 7, 8, 9)
+// ============================================================
+//    AJUSTES DE CALIBRACIÓN (INTACTOS)
+// ============================================================
+const double kFactorMultiplicador = 1.57; 
+const double kFactorMultiplicador2 = 0.888;          
+
+// ============================================================
+//    ESTRUCTURA DE PERFIL DE MOTOR (INTACTO)
+// ============================================================
+struct MotorConfig {
+    double kp;
+    double kd;
+    double max_torque;   
+    double vel_limit;    
+    double accel_limit;  
+};
+
+// ============================================================
+//    CONFIGURACIÓN POR GRUPOS (INTACTO)
+// ============================================================
+const MotorConfig kCoxaConfig = { .kp = 1.0, .kd = 1.0, .max_torque = 12.0, .vel_limit = 4.0, .accel_limit = 5.0 };
+const MotorConfig kFemurConfig = { .kp = 1.0, .kd = 1.0, .max_torque = 12.0, .vel_limit = 4.0, .accel_limit = 5.0 };
+const MotorConfig kTibiaConfig = { .kp = 1.0, .kd = 1.0, .max_torque = 12.0, .vel_limit = 4.0, .accel_limit = 5.0 };
+
 const std::vector<int> kMotorIds = {1,2,3,4,5,6,7,8,9,10,11,12}; 
 
-const double kMaxTorque = 12.0; 
-const double kKp = 1.0;   
-const double kKd = 1.0; 
+// ============================================================
+//    ESTRUCTURAS DE SISTEMA
+// ============================================================
 
-// --- PERFILES DE MOVIMIENTO ---
-const double kVelLimit_Std   = 0.1;  // rev/s
-const double kAccelLimit_Std = 0.5; 
-
-const double kVelLimit_Tibia   = 0.05;  // rev/s (Lento para tibias)
-const double kAccelLimit_Tibia = 0.1; 
-
-// --- ESTRUCTURAS ---
-
-// 1. Memoria Compartida
 struct SharedData {
     double angles[4][3]; 
+    double times[4][3];  
     bool emergency_stop;
 };
 
-// 2. Telemetría para el Dashboard
+struct TrajectoryState {
+    double start_pos_rev;   
+    double target_pos_rev;  
+    double start_time_s;    
+    double duration_s;      
+    bool is_moving;         
+};
+
 struct MotorTelemetry {
     int id;
-    double target_deg; // Agregado para ver qué pide Python
+    std::string type_name;
+    double target_deg; 
+    double raw_deg;    
     double pos_deg;
     double vel_deg_s;
     double tor_nm;
     double temp_c;
     bool online;
+    double cmd_pos_now; 
+    double target_time; 
 };
 
-// --- CLASE GESTOR DE MEMORIA ---
+// ============================================================
+//    FUNCIÓN MATEMÁTICA: MINIMUM JERK
+// ============================================================
+double CalculateMinimumJerk(double t_elapsed, double t_total, double p_start, double p_end) {
+    if (t_total < 0.001) return p_end; 
+    if (t_elapsed >= t_total) return p_end;
+    if (t_elapsed <= 0) return p_start;
+
+    double u = t_elapsed / t_total;
+    double factor = (10.0 * pow(u, 3)) - (15.0 * pow(u, 4)) + (6.0 * pow(u, 5));
+
+    return p_start + (p_end - p_start) * factor;
+}
+
 class MemoryManager {
 public:
     const char* shm_name = "rex_shm";
@@ -89,56 +126,122 @@ int main(int argc, char** argv) {
     MemoryManager memory;
     if (!memory.is_valid()) return 1;
 
-    // Inicializar controladores
     std::vector<std::shared_ptr<moteus::Controller>> controllers;
     for (int id : kMotorIds) {
         moteus::Controller::Options options;
         options.id = id;
+        options.position_format.kp_scale = moteus::kFloat;
+        options.position_format.kd_scale = moteus::kFloat;
+        options.position_format.velocity_limit = moteus::kFloat;
+        options.position_format.accel_limit = moteus::kFloat;
+        options.position_format.maximum_torque = moteus::kFloat;
         controllers.push_back(std::make_shared<moteus::Controller>(options));
     }
 
-    // Vector para guardar datos del ciclo actual
     std::vector<MotorTelemetry> telemetry_data(kMotorIds.size());
+    std::vector<TrajectoryState> motor_states(kMotorIds.size());
+    
+    for(auto& s : motor_states) { s.is_moving = false; s.target_pos_rev = 0.0; }
+    for(auto& t : telemetry_data) t.pos_deg = 0.0;
 
     auto start_time = std::chrono::steady_clock::now();
 
     while (g_running) {
         auto now = std::chrono::steady_clock::now();
-        double t_sec = std::chrono::duration<double>(now - start_time).count();
+        double t_global_sec = std::chrono::duration<double>(now - start_time).count();
 
-        // --- BUCLE DE CONTROL ---
         for (size_t i = 0; i < controllers.size(); ++i) {
             int id = kMotorIds[i]; 
             
-            // Lógica de mapeo de memoria
+            int joint_type = (id - 1) % 3; 
+            const MotorConfig* config = nullptr;
+            std::string type_str;
+
+            if (joint_type == 0) { config = &kCoxaConfig; type_str = "COXA"; }
+            else if (joint_type == 1) { config = &kFemurConfig; type_str = "FEMUR"; }
+            else { config = &kTibiaConfig; type_str = "TIBIA"; }
+
             int memory_index = id - 1; 
             int row = memory_index / 3; 
             int col = memory_index % 3; 
-
-            double target_deg = memory.data->angles[row][col]; 
-            bool is_tibia = (id == 3 || id == 6 || id == 9 || id == 12);
-
-            moteus::PositionMode::Command cmd;
-            cmd.position = target_deg / 360.0;
-            cmd.velocity = 0.0;
-            cmd.kp_scale = kKp;
-            cmd.kd_scale = kKd;
-            cmd.maximum_torque = kMaxTorque;
-            cmd.stop_position = std::numeric_limits<double>::quiet_NaN();
             
-            if (is_tibia) {
-                cmd.velocity_limit = kVelLimit_Tibia; 
-                cmd.accel_limit = kAccelLimit_Tibia;
-            } else {
-                cmd.velocity_limit = kVelLimit_Std;
-                cmd.accel_limit = kAccelLimit_Std;
+            double raw_target = memory.data->angles[row][col]; 
+            double time_target_s = memory.data->times[row][col]; 
+
+            double final_target = raw_target;
+
+            if (id == 3 || id == 6) final_target = raw_target * kFactorMultiplicador;
+            else if (id == 9 || id == 12) final_target = raw_target*kFactorMultiplicador2;
+
+            double final_target_rev = final_target / 360.0;
+
+            // ============================================================
+            //    LÓGICA DE INTERPOLACIÓN (MINIMUM JERK)
+            // ============================================================
+            TrajectoryState& state = motor_states[i];
+
+            if (std::abs(final_target_rev - state.target_pos_rev) > 0.0001) {
+                if (telemetry_data[i].online) {
+                    state.start_pos_rev = telemetry_data[i].pos_deg / 360.0;
+                } else {
+                    state.start_pos_rev = final_target_rev; 
+                }
+                state.target_pos_rev = final_target_rev;
+                state.duration_s = time_target_s;
+                state.start_time_s = t_global_sec;
+                state.is_moving = true;
             }
+
+            double cmd_position_rev = final_target_rev; 
+
+            if (state.is_moving) {
+                double t_elapsed = t_global_sec - state.start_time_s;
+                
+                if (state.duration_s > 0.01) {
+                    cmd_position_rev = CalculateMinimumJerk(
+                        t_elapsed, 
+                        state.duration_s, 
+                        state.start_pos_rev, 
+                        state.target_pos_rev
+                    );
+                }
+
+                if (t_elapsed >= state.duration_s) {
+                    state.is_moving = false; 
+                }
+            }
+
+            // --- ENVÍO DE COMANDO ---
+            moteus::PositionMode::Command cmd;
+            cmd.position = cmd_position_rev; 
+            cmd.velocity = 0.0;
+            
+            // ============================================================
+            //    MODIFICACIÓN KP ESPECÍFICO PARA MOTOR 11
+            // ============================================================
+            if (id == 11) {
+                cmd.kp_scale = 0.5; // VALOR PERSONALIZADO PARA EL MOTOR 11
+                cmd.kd_scale = 0.5; // VALOR PERSONALIZADO PARA EL MOTOR 11
+            } else {
+                cmd.kp_scale = config->kp; // Valor normal para el resto
+            }
+            // ============================================================
+
+            cmd.kd_scale = config->kd;
+            cmd.maximum_torque = config->max_torque;
+            cmd.velocity_limit = config->vel_limit; 
+            cmd.accel_limit = config->accel_limit; 
+            
+            cmd.stop_position = std::numeric_limits<double>::quiet_NaN();
 
             const auto maybe_result = controllers[i]->SetPosition(cmd);
 
-            // Guardar datos para el Dashboard
+            // --- TELEMETRÍA ---
             telemetry_data[i].id = id;
-            telemetry_data[i].target_deg = target_deg;
+            telemetry_data[i].type_name = type_str;
+            telemetry_data[i].target_deg = final_target;
+            telemetry_data[i].target_time = time_target_s;
+            telemetry_data[i].cmd_pos_now = cmd_position_rev * 360.0; 
             
             if (maybe_result) {
                 telemetry_data[i].online = true;
@@ -151,39 +254,31 @@ int main(int argc, char** argv) {
             }
         }
 
-        // --- VISUALIZACIÓN (DASHBOARD) ---
-        // Actualizamos cada 100ms (cada 10 ciclos de 10ms)
+        // --- VISUALIZACIÓN ---
         static int print_cnt = 0;
-        if (print_cnt++ % 10 == 0) {
-            std::cout << "\033[2J\033[H"; // Limpiar Pantalla
+        if (print_cnt++ % 10 == 0) { 
+            std::cout << "\033[2J\033[H"; 
             
-            std::cout << "========= SHM CONTROL MONITOR =========\n";
-            std::cout << " Tiempo: " << std::fixed << std::setprecision(2) << t_sec << "s\n";
-            std::cout << "---------------------------------------\n";
-            // He agregado la columna TARGET para que compares
-            std::cout << " ID | TARGET(°) |  POS(°)  |  VEL(d/s) | TOR(Nm) | TEMP\n";
-            std::cout << "----|-----------|----------|-----------|---------|-----\n";
+            std::cout << "========= MINIMUM JERK (MOTOR 11: KP 10.0) =========\n";
+            std::cout << " ID | TARGET(°) | TIME(s) |  CMD(°)  |  REAL(°) | TOR(Nm)\n"; 
+            std::cout << "----|-----------|---------|----------|----------|--------\n";
 
             for (const auto& data : telemetry_data) {
                 if (data.online) {
-                    // Si el error es grande (> 5 grados), pintamos la posición en rojo
-                    double error = std::abs(data.target_deg - data.pos_deg);
+                    double error = std::abs(data.cmd_pos_now - data.pos_deg);
                     std::string color = (error > 5.0) ? "\033[1;31m" : "\033[0m";
 
                     std::cout << " " << std::setw(2) << data.id << " | "
                               << std::setw(9) << std::fixed << std::setprecision(1) << data.target_deg << " | "
+                              << std::setw(7) << std::setprecision(2) << data.target_time << " | " 
+                              << std::setw(8) << data.cmd_pos_now << " | " 
                               << color << std::setw(8) << data.pos_deg << "\033[0m | "
-                              << std::setw(9) << std::setprecision(1) << data.vel_deg_s << " | "
-                              << std::setw(7) << std::setprecision(2) << data.tor_nm << " | "
-                              << std::setw(4) << std::setprecision(1) << data.temp_c << "\n";
+                              << std::setw(7) << std::setprecision(2) << data.tor_nm << "\n";
                 } else {
-                    std::cout << " " << std::setw(2) << data.id << " | "
-                              << std::setw(9) << data.target_deg << " | "
-                              << "  OFFLINE |    ---    |   ---   |  ---\n";
+                    std::cout << " " << std::setw(2) << data.id << " | OFFLINE\n";
                 }
             }
-            std::cout << "---------------------------------------\n";
-            std::cout << " [Ctrl+C] para detener.\n";
+            std::cout << "--------------------------------------------------\n";
             std::cout << std::flush;
         }
 
