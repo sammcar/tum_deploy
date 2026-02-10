@@ -1,169 +1,297 @@
 #include <iostream>
 #include <vector>
 #include <memory>
-#include <unistd.h>
-#include <chrono>
 #include <cmath>
-#include <limits>
-#include <csignal>
-#include <atomic>
-#include <sstream>
+#include <unistd.h>
+#include <future>
 #include <iomanip>
-#include <cstring>      
-#include <fcntl.h>      
-#include <sys/mman.h>   
-#include <sys/stat.h>   
-
+#include <csignal> // NECESARIA PARA CAPTURAR CTRL+C
+#include <atomic>  // NECESARIA PARA LA BANDERA SEGURA
 #include "moteus.h"
 
 namespace moteus = mjbots::moteus;
 
-// --- CONFIGURACIÓN DE MOTORES ---
-const std::vector<int> kMotorIds = {7, 8, 9}; 
-
-const double kMaxTorque = 3.0; 
-const double kKp = 1.0; 
-const double kKd = 1.0; 
-
-// --- LÍMITES DE SEGURIDAD ---
-const double kVelLimit   = 15.0;   
-const double kAccelLimit = 12.0;   
-
-// --- ESTRUCTURA DE MEMORIA ---
-struct SharedData {
-    double angles[4][3]; 
-    bool emergency_stop; 
-};
-
-// --- CLASE GESTOR DE MEMORIA ---
-class MemoryManager {
-public:
-    const char* shm_name = "rex_shm";
-    int shm_fd = -1;
-    void* ptr = MAP_FAILED;
-    SharedData* data = nullptr;
-    bool is_creator = false;
-
-    MemoryManager() {
-        shm_fd = shm_open(shm_name, O_RDWR, 0666);
-        if (shm_fd == -1) {
-            std::cout << "⚠️ Memoria no encontrada. CREANDO nueva memoria..." << std::endl;
-            shm_fd = shm_open(shm_name, O_CREAT | O_RDWR, 0666);
-            if (shm_fd == -1) {
-                perror("❌ Error fatal creando SHM");
-                return;
-            }
-            if (ftruncate(shm_fd, sizeof(SharedData)) == -1) {
-                perror("❌ Error en ftruncate");
-                return;
-            }
-            is_creator = true;
-        } else {
-            std::cout << "✅ Memoria encontrada. Conectando..." << std::endl;
-        }
-
-        ptr = mmap(0, sizeof(SharedData), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-        if (ptr == MAP_FAILED) {
-            perror("❌ Error en mmap");
-            return;
-        }
-        data = static_cast<SharedData*>(ptr);
-
-        if (is_creator) {
-            std::memset(ptr, 0, sizeof(SharedData));
-            std::cout << "🧹 Memoria inicializada a 0.0" << std::endl;
-        }
-    }
-
-    ~MemoryManager() {
-        if (ptr != MAP_FAILED) munmap(ptr, sizeof(SharedData));
-        if (shm_fd != -1) close(shm_fd);
-    }
-
-    bool is_valid() { return data != nullptr; }
-};
-
+// ============================================================
+//    VARIABLES GLOBALES DE CONTROL
+// ============================================================
 std::atomic<bool> g_running{true};
-void SignalHandler(int) { g_running = false; }
 
+void SignalHandler(int) {
+    g_running = false; // Rompe los bucles suavemente al presionar Ctrl+C
+}
+
+// ============================================================
+//    TU ESTRUCTURA DE DATOS Y CONSTANTES
+// ============================================================
+const double kFactorMultiplicador = 1.57;
+const double kFactorMultiplicador2 = 0.888;
+
+struct MotorConfig {
+    double kp;
+    double kd;
+    double max_torque;
+    double vel_limit;
+    double accel_limit;
+};
+
+// Configuraciones específicas por articulación
+const MotorConfig kCoxaConfig =  {.kp = 1.0, .kd = 1.0, .max_torque = 12.0, .vel_limit = 4.0, .accel_limit = 5.0};
+const MotorConfig kFemurConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 12.0, .vel_limit = 4.0, .accel_limit = 5.0};
+const MotorConfig kTibiaConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 12.0, .vel_limit = 4.0, .accel_limit = 5.0};
+
+const std::vector<int> kMotorIds = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+
+struct SharedData {
+    double angles[4][3];
+    double times[4][3];
+    bool is_walking; 
+};
+
+// ============================================================
+//    HELPERS DE LÓGICA MECATRÓNICA
+// ============================================================
+
+const MotorConfig* GetMotorConfig(int id) {
+    int type = (id - 1) % 3; // 0=Coxa, 1=Femur, 2=Tibia
+    if (type == 0) return &kCoxaConfig;
+    if (type == 1) return &kFemurConfig;
+    return &kTibiaConfig;
+}
+
+double GetCalibratedTarget(int id, double target_deg) {
+    double final_target = target_deg;
+    if (id == 3 || id == 6) final_target *= kFactorMultiplicador;
+    else if (id == 9 || id == 12) final_target *= kFactorMultiplicador2;
+    return final_target;
+}
+
+// ============================================================
+//    SISTEMA DE VISUALIZACIÓN Y TRANSPORTE
+// ============================================================
+
+void PrintTelemetry(const std::vector<moteus::CanFdFrame>& receive_frames) {
+    static int counter = 0;
+    if (counter++ % 10 != 0) return; // 10Hz refresh
+
+    std::vector<double> positions(13, 0.0);
+    std::vector<double> torques(13, 0.0);
+    std::vector<bool> online(13, false);
+
+    for (const auto& frame : receive_frames) {
+        if (frame.source >= 1 && frame.source <= 12) {
+            const auto res = moteus::Query::Parse(frame.data, frame.size);
+            positions[frame.source] = res.position * 360.0;
+            torques[frame.source] = res.torque;
+            online[frame.source] = true;
+        }
+    }
+
+    std::cout << "\033[H"; 
+    std::cout << "==================================================================\n";
+    std::cout << "             MONITOR DE ESTADO (TOM) - CALIBRADO                  \n";
+    std::cout << "==================================================================\n";
+    std::cout << " ID | TYPE  |  POS (deg) |  TORQUE (Nm) | STATUS  | CONFIG (Kp/Kd)\n";
+    std::cout << "----|-------|------------|--------------|---------|---------------\n";
+
+    for(int id : kMotorIds) {
+        const MotorConfig* cfg = GetMotorConfig(id);
+        std::string type = ((id-1)%3==0) ? "COXA " : ((id-1)%3==1) ? "FEMUR" : "TIBIA";
+        
+        std::cout << " " << std::setw(2) << id << " | " << type << " | ";
+        
+        if (online[id]) {
+            std::string t_color = (std::abs(torques[id]) > cfg->max_torque * 0.8) ? "\033[1;31m" : "\033[0m";
+            std::cout << std::fixed << std::setprecision(2) << std::setw(10) << positions[id] << " | "
+                      << t_color << std::setw(12) << torques[id] << "\033[0m | "
+                      << "\033[1;32m  OK   \033[0m | "
+                      << std::fixed << std::setprecision(1) << cfg->kp << "/" << cfg->kd;
+        } else {
+            std::cout << "   --.-   |      --.-    | \033[1;31mOFFLINE\033[0m | --/--";
+        }
+        std::cout << "\n";
+        if (id % 3 == 0 && id < 12) std::cout << "----+-------+------------+--------------+---------+---------------\n";
+    }
+    std::cout << "==================================================================\n" 
+              << " Presione Ctrl+C para detener los motores de forma segura.\n" << std::flush;
+}
+
+void SafeTransportCycle(std::shared_ptr<moteus::Transport> transport, 
+                        const std::vector<moteus::CanFdFrame>& send_frames, 
+                        std::vector<moteus::CanFdFrame>* receive_frames) {
+    std::promise<void> cycle_done;
+    transport->Cycle(
+        send_frames.data(),
+        send_frames.size(),
+        receive_frames,
+        [&cycle_done](int) { cycle_done.set_value(); }
+    );
+    cycle_done.get_future().wait(); 
+}
+
+// ============================================================
+//    FUNCIONES DE CONTROL (MOVIMIENTO Y HOLD)
+// ============================================================
+
+void HoldPosition(std::vector<std::shared_ptr<moteus::Controller>>& controllers, 
+                  std::shared_ptr<moteus::Transport> transport, 
+                  double target_deg, 
+                  double duration_s) {
+    
+    std::vector<moteus::CanFdFrame> send_frames;
+    std::vector<moteus::CanFdFrame> receive_frames;
+    int steps = static_cast<int>(duration_s * 100); 
+
+    // AÑADIDO: && g_running para poder cancelar
+    for (int step = 0; step < steps && g_running; ++step) {
+        send_frames.clear();
+        for (auto& controller : controllers) {
+            int id = controller->options().id;
+            const MotorConfig* cfg = GetMotorConfig(id);
+            
+            double calibrated_deg = GetCalibratedTarget(id, target_deg);
+            double target_rev = calibrated_deg / 360.0;
+
+            moteus::PositionMode::Command cmd;
+            cmd.position = target_rev;
+            cmd.velocity = 0.0;
+            cmd.kp_scale = cfg->kp;
+            cmd.kd_scale = cfg->kd;
+            cmd.maximum_torque = cfg->max_torque;
+            cmd.velocity_limit = cfg->vel_limit;
+            cmd.accel_limit = cfg->accel_limit;
+            
+            send_frames.push_back(controller->MakePosition(cmd));
+        }
+        SafeTransportCycle(transport, send_frames, &receive_frames);
+        PrintTelemetry(receive_frames);
+        usleep(10000); 
+    }
+}
+
+void MoveToTarget(std::vector<std::shared_ptr<moteus::Controller>>& controllers, 
+                  std::shared_ptr<moteus::Transport> transport, 
+                  double target_deg, 
+                  double duration_s) {
+    
+    std::vector<double> start_positions(13, 0.0);
+    std::vector<moteus::CanFdFrame> send_frames;
+    std::vector<moteus::CanFdFrame> receive_frames;
+
+    send_frames.clear();
+    for (auto& c : controllers) send_frames.push_back(c->MakePosition({}));
+    SafeTransportCycle(transport, send_frames, &receive_frames);
+
+    for (const auto& frame : receive_frames) {
+        if (frame.source >= 1 && frame.source <= 12) {
+            const auto res = moteus::Query::Parse(frame.data, frame.size);
+            start_positions[frame.source] = res.position;
+        }
+    }
+
+    int steps = static_cast<int>(duration_s * 100); 
+
+    // AÑADIDO: && g_running para poder cancelar
+    for (int step = 0; step <= steps && g_running; ++step) {
+        double alpha = (double)step / steps;
+        send_frames.clear();
+
+        for (auto& controller : controllers) {
+            int id = controller->options().id;
+            const MotorConfig* cfg = GetMotorConfig(id);
+
+            double calibrated_target_deg = GetCalibratedTarget(id, target_deg);
+            double target_rev = calibrated_target_deg / 360.0;
+            double start_rev = start_positions[id];
+
+            moteus::PositionMode::Command cmd;
+            cmd.position = start_rev + (target_rev - start_rev) * alpha;
+            cmd.velocity = (target_rev - start_rev) / duration_s;
+            cmd.kp_scale = cfg->kp;
+            cmd.kd_scale = cfg->kd;
+            cmd.maximum_torque = cfg->max_torque;
+            cmd.velocity_limit = cfg->vel_limit;
+            cmd.accel_limit = cfg->accel_limit;
+            
+            send_frames.push_back(controller->MakePosition(cmd));
+        }
+
+        SafeTransportCycle(transport, send_frames, &receive_frames);
+        PrintTelemetry(receive_frames);
+        usleep(10000); 
+    }
+}
+
+// ============================================================
+//    MAIN
+// ============================================================
 int main(int argc, char** argv) {
+    // 1. REGISTRAR SEÑAL DE APAGADO
     std::signal(SIGINT, SignalHandler);
-    moteus::Controller::DefaultArgProcess(argc, argv);
 
-    MemoryManager memory;
-    if (!memory.is_valid()) return 1;
+    moteus::Controller::DefaultArgProcess(argc, argv);
+    auto transport = moteus::Controller::MakeSingletonTransport({});
 
     std::vector<std::shared_ptr<moteus::Controller>> controllers;
     for (int id : kMotorIds) {
         moteus::Controller::Options options;
         options.id = id;
+        options.transport = transport;
+        options.query_format.position = moteus::kFloat;
+        options.query_format.velocity = moteus::kFloat;
+        options.query_format.torque = moteus::kFloat;
+        options.position_format.kp_scale = moteus::kFloat;
+        options.position_format.kd_scale = moteus::kFloat;
+        options.position_format.velocity_limit = moteus::kFloat;
+        options.position_format.accel_limit = moteus::kFloat;
         controllers.push_back(std::make_shared<moteus::Controller>(options));
     }
 
-    std::cout << "--- MONITOR DE ÁNGULOS (Target vs Real) ---" << std::endl;
-    std::cout << "Formato: ID [Objetivo -> Real]" << std::endl;
-    
-    auto start_time = std::chrono::steady_clock::now();
+    std::cout << "\033[2J"; 
 
-    // Contador para controlar la frecuencia de impresión
-    int cycle_count = 0;
+    // 2. Ir a Cero
+    if (g_running) MoveToTarget(controllers, transport, 0.0, 3.0); 
 
-    while (g_running) {
-        auto now = std::chrono::steady_clock::now();
-        std::chrono::duration<double> elapsed = now - start_time;
-        double t_sec = elapsed.count();
-        
-        // Stringstream para construir la línea de texto
-        std::stringstream status_line;
-
-        // Solo preparamos el texto si toca imprimir (Optimización)
-        bool should_print = (cycle_count % 50 == 0); // 50 ciclos = ~0.5 segundos
-
-        if (should_print) {
-            status_line << std::fixed << std::setprecision(1) << "T:" << t_sec << "s | ";
-        }
-
-        for (size_t i = 0; i < controllers.size(); ++i) {
-            int id = kMotorIds[i];
-            double target_deg = memory.data->angles[0][i]; 
-
-            moteus::PositionMode::Command cmd;
-            cmd.position = target_deg / 360.0; 
-            cmd.velocity = 0.0;
-            cmd.kp_scale = kKp;
-            cmd.kd_scale = kKd;
-            cmd.maximum_torque = kMaxTorque;
-            cmd.stop_position = std::numeric_limits<double>::quiet_NaN();
-            cmd.velocity_limit = kVelLimit / 360.0; 
-            cmd.accel_limit = kAccelLimit / 360.0;
-
-            const auto maybe_result = controllers[i]->SetPosition(cmd);
-
-            // Solo guardamos datos para imprimir si toca imprimir
-            if (maybe_result && should_print) {
-                double real_pos = maybe_result->values.position * 360.0;
-                
-                // Formato limpio: M7[ 10.0 ->  9.8]
-                status_line << "M" << id << "[" 
-                            << std::setw(5) << std::fixed << std::setprecision(2) << target_deg 
-                            << "->" 
-                            << std::setw(5) << std::fixed << std::setprecision(2) << real_pos 
-                            << "] ";
-            }
-        }
-
-        // --- IMPRESIÓN PERIÓDICA ---
-        if (should_print) {
-            // Usa "\r" para sobreescribir la línea (Dashboard)
-            // Usa "\n" si quieres que baje línea por línea (Historial)
-            std::cout << "\r" << status_line.str() << "      " << std::flush;
-        }
-
-        cycle_count++;
-        ::usleep(10000); // 100Hz
+    // 3. Repetir 3 veces
+    for (int i = 1; i <= 3 && g_running; ++i) {
+        MoveToTarget(controllers, transport, 10.0, 1.5);
+        HoldPosition(controllers, transport, 10.0, 2.0);
+        MoveToTarget(controllers, transport, 0.0, 1.5);
     }
 
-    std::cout << "\n\nDeteniendo..." << std::endl;
-    for (auto& controller : controllers) controller->SetStop();
+    // 4. Bucle Final: Mantener 0 grados
+    std::vector<moteus::CanFdFrame> send_frames;
+    std::vector<moteus::CanFdFrame> receive_frames;
+    send_frames.reserve(12);
+
+    while (g_running) { // Se rompe cuando pulsas Ctrl+C
+        send_frames.clear();
+        for (auto& controller : controllers) {
+            int id = controller->options().id;
+            const MotorConfig* cfg = GetMotorConfig(id);
+
+            moteus::PositionMode::Command cmd;
+            cmd.position = 0.0;
+            cmd.velocity = 0.0;
+            cmd.kp_scale = cfg->kp;
+            cmd.kd_scale = cfg->kd;
+            cmd.maximum_torque = cfg->max_torque;
+            cmd.velocity_limit = cfg->vel_limit;
+            cmd.accel_limit = cfg->accel_limit;
+            
+            send_frames.push_back(controller->MakePosition(cmd));
+        }
+
+        SafeTransportCycle(transport, send_frames, &receive_frames);
+        PrintTelemetry(receive_frames);
+        usleep(10000);
+    }
+    
+    // 5. APAGADO SEGURO
+    std::cout << "\n\n--- DETENIENDO MOTORES (STOP MODE) ---\n";
+    for (auto& controller : controllers) {
+        controller->SetStop();
+    }
+    usleep(50000); 
+
     return 0;
 }
