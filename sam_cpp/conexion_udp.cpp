@@ -29,8 +29,8 @@ void SignalHandler(int) { g_running = false; }
 const double kFactorMultiplicador = 1.57;
 const double kFactorMultiplicador2 = 0.888;
 
-const double kSafetyVelLimit = 30.0;  
-const double kSafetyAccLimit = 150.0; 
+const double kSafetyVelLimit = 30.0;
+const double kSafetyAccLimit = 40.0;
 
 struct MotorConfig {
     double kp;
@@ -40,9 +40,9 @@ struct MotorConfig {
     double accel_limit;
 };
 
-const MotorConfig kCoxaConfig =  {.kp = 1.0, .kd = 1.0, .max_torque = 12.0, .vel_limit = 4.0, .accel_limit = 5.0};
-const MotorConfig kFemurConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 12.0, .vel_limit = 4.0, .accel_limit = 5.0};
-const MotorConfig kTibiaConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 12.0, .vel_limit = 4.0, .accel_limit = 5.0};
+const MotorConfig kCoxaConfig =  {.kp = 1.0, .kd = 1.0, .max_torque = 6.0, .vel_limit = 5.0, .accel_limit = 10.0};
+const MotorConfig kFemurConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 6.0, .vel_limit = 5.0, .accel_limit = 10.0};
+const MotorConfig kTibiaConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 6.0, .vel_limit = 5.0, .accel_limit = 10.0};
 
 const std::vector<int> kMotorIds = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
 
@@ -53,40 +53,84 @@ struct SharedData {
 };
 
 struct TrajectoryState {
-    double current_pos_rev = 0.0;
+    double current_cmd_pos = 0.0;  // Posición comandada teórica
     double start_pos_rev = 0.0;
     double target_pos_rev = 0.0;
     double start_time_s = 0.0;
     double duration_s = 0.0;
+    double theoretical_vel = 0.0;  // Velocidad calculada teóricamente
     bool is_moving = false;
 };
 
 // ============================================================
 //    GESTOR DE MEMORIA COMPARTIDA
 // ============================================================
+// ============================================================
+//    GESTOR DE MEMORIA COMPARTIDA (ACTUALIZADO)
+// ============================================================
 class MemoryManager {
 public:
-    const char *shm_name = "rex_shm";
+    const char *shm_name = "/rex_shm"; // Nota: Se recomienda empezar con '/'
     int shm_fd = -1;
     void *ptr = MAP_FAILED;
     SharedData *data = nullptr;
 
     MemoryManager() {
-        shm_fd = shm_open(shm_name, O_RDWR, 0666);
-        if (shm_fd != -1) {
-            ptr = mmap(0, sizeof(SharedData), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-            data = static_cast<SharedData *>(ptr);
+        // 1. Intentar abrir o crear la memoria compartida
+        // O_CREAT: La crea si no existe.
+        // O_RDWR: Lectura y escritura.
+        shm_fd = shm_open(shm_name, O_RDWR | O_CREAT, 0666);
+        
+        if (shm_fd == -1) {
+            std::cerr << "❌ Error crítico: No se pudo abrir/crear SHM: " << strerror(errno) << std::endl;
+            return;
+        }
+
+        // 2. Verificar el tamaño actual de la memoria
+        struct stat shm_stat;
+        if (fstat(shm_fd, &shm_stat) == -1) {
+            std::cerr << "❌ Error al verificar tamaño de SHM" << std::endl;
+            return;
+        }
+
+        // 3. Si el tamaño es 0 (acaba de ser creada), ajustamos el tamaño
+        bool is_new = (shm_stat.st_size == 0);
+        if (is_new) {
+            if (ftruncate(shm_fd, sizeof(SharedData)) == -1) {
+                std::cerr << "❌ Error al definir tamaño de SHM" << std::endl;
+                return;
+            }
+        }
+
+        // 4. Mapear el bloque a la memoria del proceso
+        ptr = mmap(0, sizeof(SharedData), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        
+        if (ptr == MAP_FAILED) {
+            std::cerr << "❌ Error al mapear SHM (mmap)" << std::endl;
+            return;
+        }
+
+        data = static_cast<SharedData *>(ptr);
+
+        // 5. Inicializar en 0.0 si es nueva o si queremos asegurar un estado limpio
+        if (is_new) {
+            std::cout << "✨ SHM no existía. Inicializando datos en 0.0..." << std::endl;
+            std::memset(data, 0, sizeof(SharedData));
+        } else {
+            std::cout << "✅ SHM encontrada y conectada." << std::endl;
         }
     }
+
     ~MemoryManager() {
         if (ptr != MAP_FAILED) munmap(ptr, sizeof(SharedData));
         if (shm_fd != -1) close(shm_fd);
     }
+    
     bool is_valid() { return data != nullptr; }
 };
 
 // ============================================================
-//    MATEMÁTICAS: JERK LIMITADO (CURVA S)
+//    MATEMÁTICAS: TRAYECTORIAS
 // ============================================================
 
 double CalculateMinimumJerk(double t_elapsed, double t_total, double p_start, double p_end) {
@@ -119,22 +163,16 @@ double GetCalibratedTarget(int id, double target_deg) {
 }
 
 // ============================================================
-//    VISUALIZACIÓN ORDENADA (IDs FIJOS)
+//    TELEMETRÍA (SOLO DEBUGGING)
 // ============================================================
 
 void PrintTelemetry(const std::vector<moteus::CanFdFrame>& receive_frames, bool is_walking, std::string status_msg) {
     static int counter = 0;
     if (counter++ % 10 != 0) return; 
 
-    // Estructura para organizar los datos por ID
-    struct MotorInfo {
-        bool online = false;
-        double pos = 0.0;
-        double torque = 0.0;
-    };
-    MotorInfo table[13]; // Índices 1-12
+    struct MotorInfo { bool online = false; double pos = 0.0; double torque = 0.0; };
+    MotorInfo table[13];
 
-    // Mapear los frames recibidos a su posición fija en la tabla
     for (const auto& frame : receive_frames) {
         if (frame.source >= 1 && frame.source <= 12) {
             const auto res = moteus::Query::Parse(frame.data, frame.size);
@@ -147,29 +185,25 @@ void PrintTelemetry(const std::vector<moteus::CanFdFrame>& receive_frames, bool 
     std::cout << "\033[H"; 
     std::cout << "==================================================================\n";
     std::cout << " STATUS: " << status_msg << "\n";
-    std::cout << " MODO: " << (is_walking ? "\033[1;32mWALKING\033[0m" : "\033[1;34mSTATIC (S-CURVE)\033[0m") << "\n";
+    std::cout << " MODO: " << (is_walking ? "\033[1;32mWALKING (THEORETICAL VEL)\033[0m" : "\033[1;34mSTATIC (S-CURVE)\033[0m") << "\n";
     std::cout << "==================================================================\n";
-    std::cout << " ID | POS (deg) | TORQUE (Nm) | STATUS | CONFIG (Kp/Kd) \n";
-    std::cout << "----|-----------|-------------|--------|----------------\n";
+    std::cout << " ID | POS_REAL (deg) | TORQUE (Nm) | STATUS | CONFIG (Kp/Kd) \n";
+    std::cout << "----|----------------|-------------|--------|----------------\n";
 
-    // Iterar siempre del 1 al 12 para mantener el orden visual
     for (int id : kMotorIds) {
         double show_kp = (id == 10 || id == 11) ? 0.8 : GetMotorConfig(id)->kp;
         double show_kd = (id == 10 || id == 11) ? 0.8 : GetMotorConfig(id)->kd;
 
         if (table[id].online) {
-            printf(" %2d | %9.2f | %11.2f |   OK   |  %.1f / %.1f \n", 
+            printf(" %2d | %14.2f | %11.2f |   OK   |  %.1f / %.1f \n", 
                     id, table[id].pos, table[id].torque, show_kp, show_kd);
         } else {
-            printf(" %2d |   --.--   |    --.--    | \033[1;31mOFFLINE\033[0m |  %.1f / %.1f \n", 
+            printf(" %2d |     --.--      |    --.--    | \033[1;31mOFFLINE\033[0m |  %.1f / %.1f \n", 
                     id, show_kp, show_kd);
         }
-        if (id % 3 == 0 && id < 12) std::cout << "----|-----------|-------------|--------|----------------\n";
+        if (id % 3 == 0 && id < 12) std::cout << "----|----------------|-------------|--------|----------------\n";
     }
-    std::cout << "==================================================================\n" << std::flush;
 }
-
-
 
 void SafeTransportCycle(std::shared_ptr<moteus::Transport> transport, 
                         const std::vector<moteus::CanFdFrame>& send_frames, 
@@ -196,6 +230,8 @@ int main(int argc, char** argv) {
     for (int id : kMotorIds) {
         moteus::Controller::Options options;
         options.id = id;
+           // 2. (Opcional) Si quieres limitar la fuerza máxima dinámicamente
+        options.position_format.maximum_torque = moteus::kFloat;
         options.transport = transport;
         options.position_format.kp_scale = moteus::kFloat;
         options.position_format.kd_scale = moteus::kFloat;
@@ -206,10 +242,8 @@ int main(int argc, char** argv) {
 
     std::cout << "\033[2J"; 
 
-    // ------------------------------------------------------------
-    // INICIO SEGURO (Homing) con LÍMITES RESTRICTIVOS
-    // ------------------------------------------------------------
-    std::cout << ">> INICIANDO TRANSICIÓN SEGURA (LÍMITES MOTOR) ..." << std::endl;
+    // --- HOMING SEGURA ---
+    std::cout << ">> LEYENDO POSICIONES INICIALES PARA HOMING..." << std::endl;
     std::vector<moteus::CanFdFrame> initial_receive;
     std::vector<moteus::CanFdFrame> initial_send;
     for (auto& c : controllers) initial_send.push_back(c->MakePosition({}));
@@ -218,7 +252,8 @@ int main(int argc, char** argv) {
     for (const auto& frame : initial_receive) {
         if (frame.source >= 1 && frame.source <= 12) {
             const auto res = moteus::Query::Parse(frame.data, frame.size);
-            motor_states[frame.source].current_pos_rev = res.position;
+            motor_states[frame.source].current_cmd_pos = res.position;
+            motor_states[frame.source].target_pos_rev = res.position;
         }
     }
 
@@ -234,25 +269,27 @@ int main(int argc, char** argv) {
         for (auto& c : controllers) {
             int id = c->options().id;
             const MotorConfig* cfg = GetMotorConfig(id);
-            double pos = CalculateMinimumJerk(elapsed, startup_duration, motor_states[id].current_pos_rev, 0.0);
-            double vel = CalculateMinimumJerkVelocity(elapsed, startup_duration, motor_states[id].current_pos_rev, 0.0);
+            double pos = CalculateMinimumJerk(elapsed, startup_duration, motor_states[id].current_cmd_pos, 0.0);
+            double vel = CalculateMinimumJerkVelocity(elapsed, startup_duration, motor_states[id].current_cmd_pos, 0.0);
             
             moteus::PositionMode::Command cmd;
-            cmd.position = pos;
-            cmd.velocity = vel;
-            cmd.velocity_limit = cfg->vel_limit; // Límite real del motor para homing
-            cmd.accel_limit = cfg->accel_limit;
+            cmd.position = pos; cmd.velocity = vel;
+            cmd.velocity_limit = cfg->vel_limit; cmd.accel_limit = cfg->accel_limit;
             startup_frames.push_back(c->MakePosition(cmd));
         }
         std::vector<moteus::CanFdFrame> rec;
         SafeTransportCycle(transport, startup_frames, &rec);
-        PrintTelemetry(rec, false, "\033[1;33mHOMING (RESTRICTED)\033[0m");
+        PrintTelemetry(rec, false, "\033[1;33mHOMING\033[0m");
         usleep(10000);
     }
-
-    // ------------------------------------------------------------
-    // BUCLE PRINCIPAL (Control por Memoria con LÍMITES TECHO)
-    // ------------------------------------------------------------
+    // --- INSERTAR ESTO JUSTO DESPUÉS DE SALIR DEL BUCLE DE HOMING ---
+    for (int id : kMotorIds) {
+        motor_states[id].current_cmd_pos = 0.0; // Estamos físicamente en 0
+        motor_states[id].start_pos_rev = 0.0;   // El nuevo inicio es 0
+        motor_states[id].target_pos_rev = 0.0;  // El objetivo actual es 0
+        motor_states[id].is_moving = false;     // Detener cualquier trayectoria previa
+    }
+    // --- BUCLE PRINCIPAL ---
     auto start_time = std::chrono::steady_clock::now();
 
     while (g_running) {
@@ -271,43 +308,55 @@ int main(int argc, char** argv) {
             double move_time = memory.data->times[row][col];
             double target_rev = target_deg / 360.0;
 
+            TrajectoryState &s = motor_states[id];
             double cmd_pos, cmd_vel;
             bool high_safety = false;
+            
+        if (is_walking_mode) {
+            // 1. DETECTAR NUEVO OBJETIVO DESDE SHM
+            if (std::abs(target_rev - s.target_pos_rev) > 0.00001) {
+                // Guardamos de dónde venimos y a dónde vamos
+                s.start_pos_rev = s.current_cmd_pos; // IMPORTANTE: empezar desde donde estamos REALMENTE ahora
+                s.target_pos_rev = target_rev;
+                
+                // Ajuste de tiempo para evitar divisiones por cero
+                s.duration_s = (move_time < 0.001) ? 0.02 : move_time;
+                s.start_time_s = t_global_sec;
+                s.is_moving = true;
 
-            if (is_walking_mode) {
-                cmd_pos = target_rev;
-                cmd_vel = 0.0;
-                motor_states[id].is_moving = false;
-                motor_states[id].target_pos_rev = target_rev;
-            } else {
-                TrajectoryState &s = motor_states[id];
-                if (std::abs(target_rev - s.target_pos_rev) > 0.0001) {
-                    s.start_pos_rev = s.current_pos_rev;
-                    s.target_pos_rev = target_rev;
-                    s.duration_s = (move_time < 0.01) ? 1.0 : move_time;
-                    s.start_time_s = t_global_sec;
-                    s.is_moving = true;
-                }
+                // Calculamos la velocidad necesaria para cubrir la distancia en ese tiempo
+                s.theoretical_vel = (s.target_pos_rev - s.start_pos_rev) / s.duration_s;
+            }
 
-                if (s.is_moving) {
-                    double t_elap = t_global_sec - s.start_time_s;
-                    cmd_pos = CalculateMinimumJerk(t_elap, s.duration_s, s.start_pos_rev, s.target_pos_rev);
-                    cmd_vel = CalculateMinimumJerkVelocity(t_elap, s.duration_s, s.start_pos_rev, s.target_pos_rev);
-                    high_safety = true; 
-                    if (t_elap >= s.duration_s) s.is_moving = false;
-                } else {
+            // 2. EJECUTAR EL MOVIMIENTO FLUIDO
+            if (s.is_moving) {
+                double t_elap = t_global_sec - s.start_time_s;
+
+                if (t_elap >= s.duration_s) {
+                    // Llegamos al objetivo
                     cmd_pos = s.target_pos_rev;
                     cmd_vel = 0.0;
+                    s.is_moving = false;
+                } else {
+                    // Avanzamos un paso pequeño proporcional al tiempo transcurrido
+                    cmd_pos = s.start_pos_rev + s.theoretical_vel * t_elap;
+                    cmd_vel = s.theoretical_vel;
                 }
+            } else {
+                // Mantener posición si no hay movimiento nuevo
+                cmd_pos = s.target_pos_rev;
+                cmd_vel = 0.0;
             }
-            motor_states[id].current_pos_rev = cmd_pos;
+        }
+
+            // Actualizamos la posición comandada teórica (sin usar feedback real)
+            s.current_cmd_pos = cmd_pos;
 
             moteus::PositionMode::Command cmd;
             cmd.position = cmd_pos;
-            cmd.velocity = cmd_vel;
+            cmd.velocity = cmd_vel; // Este es el valor clave para la fluidez
             cmd.kp_scale = (id == 10 || id == 11) ? 0.8 : cfg->kp;
             cmd.kd_scale = (id == 10 || id == 11) ? 0.8 : cfg->kd;
-            
             cmd.velocity_limit = high_safety ? kSafetyVelLimit : cfg->vel_limit;
             cmd.accel_limit = high_safety ? kSafetyAccLimit : cfg->accel_limit;
             cmd.maximum_torque = cfg->max_torque;
@@ -316,19 +365,15 @@ int main(int argc, char** argv) {
 
         std::vector<moteus::CanFdFrame> receive_frames;
         SafeTransportCycle(transport, send_frames, &receive_frames);
-        PrintTelemetry(receive_frames, is_walking_mode, "\033[1;32mRUNNING (ACTIVE)\033[0m");
-        usleep(10000); 
+        
+        // La telemetría lee los frames de respuesta, pero estos NO afectan los cálculos de arriba
+        PrintTelemetry(receive_frames, is_walking_mode, "\033[1;32mRUNNING\033[0m");
+        
+        usleep(10000); // Bucle a ~100Hz
     }
 
-    // ------------------------------------------------------------
-    // APAGADO SEGURO
-    // ------------------------------------------------------------
-    std::cout << "\n>> APAGADO SEGURO: PONIENDO MOTORES EN IDLE..." << std::endl;
-    for (auto& c : controllers) {
-        c->SetStop(); 
-    }
+    std::cout << "\n>> APAGADO SEGURO: MOTORES EN IDLE..." << std::endl;
+    for (auto& c : controllers) c->SetStop();
     usleep(50000); 
-    std::cout << ">> SISTEMA DETENIDO CORRECTAMENTE." << std::endl;
-
     return 0;
 }
