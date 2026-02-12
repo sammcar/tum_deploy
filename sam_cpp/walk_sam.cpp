@@ -16,24 +16,24 @@ using namespace Eigen;
 using namespace std;
 
 // ==========================================
-// 1. ESTRUCTURA DE MEMORIA (COMPATIBLE CON SEBAS)
+// ESTRUCTURA DE MEMORIA
 // ==========================================
 #pragma pack(push, 1)
 struct SharedData {
-    double angles[4][3];  // [FL, FR, BL, BR][Hip, Thigh, Calf] (Grados)
-    double times[4][3];   // Tiempos de interpolación (Segundos)
-    bool is_walking;      // Flag de estado
+    double angles[4][3];
+    double times[4][3];   
+    bool is_walking;      
 };
 #pragma pack(pop)
 
-const char* SHM_NAME = "/rex_shm"; // Nombre usado en código de Sebas
+const char* SHM_NAME = "/rex_shm"; 
 const int SHM_SIZE = sizeof(SharedData);
 
 volatile sig_atomic_t stop_signal_received = 0;
 void signal_handler(int signal) { stop_signal_received = 1; }
 
 // ==========================================
-// 2. UTILIDADES MATEMÁTICAS & SUAVIZADO
+// UTILIDADES MATEMÁTICAS
 // ==========================================
 double wrap_to_pi(double angle) {
     angle = fmod(angle + M_PI, 2 * M_PI);
@@ -41,36 +41,49 @@ double wrap_to_pi(double angle) {
     return angle - M_PI;
 }
 
-// Curva S Cúbica (Smoothstep) - El secreto de la suavidad de Sebas
 double ease_in_out(double t) {
     if (t <= 0) return 0;
     if (t >= 1) return 1;
     return t * t * (3.0 - 2.0 * t);
 }
 
+// Perfil Trapezoidal (Sube, Mantiene, Baja) para el cuerpo
+double trapezoid_profile(double t, double fade_in, double fade_out) {
+    if (t < fade_in) return t / fade_in; 
+    if (t > fade_out) return (1.0 - t) / (1.0 - fade_out); 
+    return 1.0; 
+}
+
 struct LegAngles { double th1, th2, th3; };
 
 // ==========================================
-// 3. CONFIGURACIÓN FÍSICA
+// CONFIGURACIÓN FÍSICA (DEFINICIONES USUARIO)
 // ==========================================
 const double L1 = 0.093;
 const double L2 = 0.147;
 const double L3 = 0.230;
 
+// Posición de Marcha (Altura de trabajo)
 std::map<std::string, Vector3d> STAND_XYZ = {
-    {"FL", Vector3d(-0.008, 0.093, -0.316)}, {"FR", Vector3d(-0.008, -0.093, -0.316)},
-    {"BL", Vector3d(-0.043, 0.093, -0.316)}, {"BR", Vector3d(-0.043, -0.093, -0.316)}
+    {"FL", Vector3d(0.02, 0.093, -0.316)}, {"FR", Vector3d(0.02, -0.093, -0.316)},
+    {"BL", Vector3d(-0.018, 0.093, -0.316)}, {"BR", Vector3d(-0.018, -0.093, -0.316)}
 };
 
+// std::map<std::string, Vector3d> STAND_XYZ = {
+//     {"FL", Vector3d(-0.008, 0.093, -0.316)}, {"FR", Vector3d(-0.008, -0.093, -0.316)},
+//     {"BL", Vector3d(-0.043, 0.093, -0.316)}, {"BR", Vector3d(-0.043, -0.093, -0.316)}
+// };
+
+
+// Posición de Reposo (Para apagar/descansar)
 std::map<std::string, Vector3d> INIT_XYZ = {
     {"FL", Vector3d(0.0, 0.093, -0.377)}, {"FR", Vector3d(0.0, -0.093, -0.377)},
     {"BL", Vector3d(0.0, 0.093, -0.377)}, {"BR", Vector3d(0.0, -0.093, -0.377)}
 };
 
 // ==========================================
-// 4. CINEMÁTICA INVERSA (VERSIÓN SEBAS)
+// CINEMÁTICA INVERSA
 // ==========================================
-// Retorna GRADOS directamente y maneja offsets de hardware
 LegAngles solve_IK(double x, double y, double z, bool es_pata_derecha) {
     double y_local = es_pata_derecha ? -y : y;
     double dist_yz = sqrt(pow(y_local, 2) + pow(z, 2));
@@ -78,23 +91,20 @@ LegAngles solve_IK(double x, double y, double z, bool es_pata_derecha) {
     double theta1 = atan2(z, y_local) + acos(std::max(-1.0, std::min(1.0, L1 / D)));
 
     double R_term = pow(dist_yz, 2) - pow(L1, 2);
-    // std::max(0.0, ...) previene NaN por errores de flotante
     double R = -sqrt(std::max(0.0, R_term)); 
-    
     double H = sqrt(pow(x, 2) + pow(R, 2));
+    
     double cos_phi1 = (pow(L2, 2) + pow(L3, 2) - pow(H, 2)) / (2 * L2 * L3);
     double phi1 = acos(std::max(-1.0, std::min(1.0, cos_phi1)));
     
     double theta3 = M_PI - phi1; 
-    
     double phi2 = atan2(R, x);
     double sin_phi3 = (L3 * sin(phi1)) / (H + 1e-9);
     double phi3 = asin(std::max(-1.0, std::min(1.0, sin_phi3)));
     double theta2 = phi2 - phi3;
 
-    if (es_pata_derecha) theta1 = -theta1;
+    //if (es_pata_derecha) theta1 = -theta1;
 
-    // Conversión a Grados y Offsets de Hardware (Igual que código Sebas)
     return {
         wrap_to_pi(theta1) * 180.0 / M_PI,
         wrap_to_pi(theta2 + M_PI/2.0) * 180.0 / M_PI,
@@ -103,281 +113,355 @@ LegAngles solve_IK(double x, double y, double z, bool es_pata_derecha) {
 }
 
 // ==========================================
-// 5. CEREBRO DE MARCHA (V5 + SUAVIZADO)
+// CEREBRO V7.2: SEGURIDAD + LIMP LOGIC
 // ==========================================
-class GaitGenerator {
+class GaitGeneratorV7 {
 public:
-    std::map<std::string, Vector3d> feet_state;
-    std::map<std::string, Vector3d> phase_start;
-    std::map<std::string, Vector3d> phase_end;
-    std::map<std::string, Vector3d> default_stance; 
+    std::map<std::string, Vector3d> current_feet_pos; 
     
-    double walking_height; 
-    Vector3d body_shift;
-    Vector3d target_shift_val;
-    Vector3d current_vel;
-    Vector3d next_vel;
+    double step_length_x;  
+    double step_height_z;  
+    double period;         
+    double lean_y; 
+    double lean_x; 
+
+    int pts_swing; 
+    int pts_shift; 
     
-    int swing_points = 20;   
-    int shift_points = 20;   
-    int stance_points = 20;  
+    std::vector<std::string> leg_order = {"FL", "BR", "FR", "BL"};
+    int seq_idx = 0;
     
-    double swing_time = 1.0; 
-    double shift_time = 1.5; 
-    double lift_height = 0.05;
-    double lean_factor = 0.015;
+    std::vector<Vector3d> body_offset_traj; 
+    std::vector<Vector3d> swing_traj_abs;   
+    
+    int current_tick = 0;
+    int total_ticks = 0;
+    bool is_moving = false;
 
-    double step_timer = 0.0;
-    std::vector<std::string> sequence = {"FL", "BR", "FR", "BL"};
-    int current_seq_idx = 0;
-    int step_queue = 0;
-    string state = "STAND";
-
-    GaitGenerator() {
-        double raw_h = std::abs(STAND_XYZ["FL"][2]);
-        walking_height = raw_h * 0.95; // Corrección de altura V5
-
-        for (auto const& [key, val] : STAND_XYZ) {
-            Vector3d flat_pos = val;
-            flat_pos[2] = 0.0; 
-            default_stance[key] = flat_pos;
-            feet_state[key] = flat_pos;
-            phase_start[key] = flat_pos;
-            phase_end[key] = flat_pos;
-        }
-
-        body_shift = Vector3d(0,0,0);
-        target_shift_val = Vector3d(0,0,0);
-        current_vel = Vector3d(0,0,0);
-        next_vel = Vector3d(0,0,0);
-    }
-
-    // --- FUNCIÓN DE TRAYECTORIA MEJORADA (Con ease_in_out) ---
-    Vector3d get_staircase_pos(Vector3d start, Vector3d end, double progress, int points_count, double lift_z = 0.0) {
-        if (points_count <= 1) return start;
+    GaitGeneratorV7() {
+        step_length_x = 0.06; // Esta en metros, 0.07 son 7 cm 
+        step_height_z = 0.12; 
+        period = 1.0; // Segundos        
+        pts_swing = 15;
+        pts_shift = 15;
         
-        // 1. Discretización (Lógica V5)
-        int step_idx = (int)(progress * points_count);
-        if (step_idx >= points_count) step_idx = points_count - 1;
-        double t_linear = (double)step_idx / (double)(points_count - 1);
+        lean_y = 0.05;  
+        lean_x = 0.05; // Subir
 
-        // 2. Suavizado (Lógica Sebas)
-        // Aplicamos la curva S al tiempo para que el movimiento no sea robótico
-        double t_smooth = ease_in_out(t_linear);
+        // INICIO SEGURO: Usamos STAND_XYZ como punto de partida
+        for(auto const& [k, v] : STAND_XYZ) {
+            current_feet_pos[k] = v;
+        }
+    }
+
+    void plan_period() {
+        current_tick = 0;
+        total_ticks = pts_swing + pts_shift;
         
-        // 3. Interpolación
-        Vector3d current_pos = start + (end - start) * t_smooth;
+        body_offset_traj.clear();
+        swing_traj_abs.clear();
+        
+        std::string active_leg = leg_order[seq_idx];
 
-        // 4. Arco Z (También suavizado por t_smooth)
-        if (lift_z > 0.001) {
-            double z_offset = sin(t_smooth * M_PI) * lift_z;
-            if (z_offset < 0) z_offset = 0;
-            current_pos[2] = z_offset; 
-        } else {
-            current_pos[2] = 0.0;
+        // 1. DIRECCIÓN COMPENSACIÓN
+        double shift_dir_x = 0.0;
+        double shift_dir_y = 0.0;
+
+        if (active_leg == "FL") { shift_dir_x = -1.0; shift_dir_y = -1.0; } 
+        if (active_leg == "FR") { shift_dir_x = -1.0; shift_dir_y =  1.0; } 
+        if (active_leg == "BL") { shift_dir_x =  1.0; shift_dir_y = -1.0; } 
+        if (active_leg == "BR") { shift_dir_x =  1.0; shift_dir_y =  1.0; } 
+
+        double body_fwd_per_period = step_length_x / 4.0;
+
+        for(int i = 0; i < total_ticks; i++) {
+            double t_total = (double)i / (double)(total_ticks - 1);
+            double sway_weight = trapezoid_profile(t_total, 0.3, 0.7);
+            
+            Vector3d pt_body = Vector3d(0,0,0);
+            
+            // Avance lineal continuo
+            pt_body[0] += body_fwd_per_period * t_total;
+            
+            // Compensación Trapezoidal (Shift)
+            pt_body[0] += shift_dir_x * lean_x * sway_weight;
+            pt_body[1] += shift_dir_y * lean_y * sway_weight;
+            
+            body_offset_traj.push_back(pt_body);
         }
-        return current_pos;
+
+        // 2. CURVA SWING (Desde posición actual en memoria)
+        Vector3d start_pos = current_feet_pos[active_leg];
+        Vector3d target_pos = start_pos;
+        target_pos[0] += step_length_x; 
+
+        for(int i = 0; i < pts_swing; i++) {
+            double t_swing = (double)i / (double)(pts_swing - 1);
+            double t_s = ease_in_out(t_swing);
+            
+            Vector3d pt_swing = start_pos + (target_pos - start_pos) * t_s;
+            // Usamos STAND_XYZ[active_leg][2] como base Z para asegurar altura correcta
+            pt_swing[2] = STAND_XYZ[active_leg][2] + sin(t_s * M_PI) * step_height_z;
+            
+            swing_traj_abs.push_back(pt_swing);
+        }
+        
+        is_moving = true;
     }
 
-    void trigger_steps(int n_steps, Vector3d velocity_override) {
-        if (n_steps > 0) {
-            step_queue += n_steps;
-            state = "SEQUENCE_RUNNING";
-            double speed_scale_lin = 0.12; 
-            double speed_scale_rot = 0.4;
-            double vx = velocity_override[0];
-            if (velocity_override.norm() < 0.01) vx = 1.0; 
-            next_vel = Vector3d(vx * speed_scale_lin, velocity_override[1] * speed_scale_lin, velocity_override[2] * speed_scale_rot);
-            if (current_vel.norm() < 0.001) current_vel = next_vel;
+    // double update() {
+    //     if(!is_moving) return 0.02;
+
+    //     std::string active_leg = leg_order[seq_idx];
+        
+    //     // CALCULAR DELTA 
+    //     Vector3d current_body_off = body_offset_traj[current_tick];
+    //     Vector3d prev_body_off = (current_tick == 0) ? Vector3d(0,0,0) : body_offset_traj[current_tick - 1];
+    //     Vector3d delta_body = current_body_off - prev_body_off;
+
+    //     // 1. APLICAR DELTA A TODAS (Arrastre)
+    //     for(auto& [leg, pos] : current_feet_pos) {
+    //         pos -= delta_body;
+    //     }
+
+    //     // 2. SWING OVERWRITE
+    //     if(current_tick < pts_swing) {
+    //         current_feet_pos[active_leg] = swing_traj_abs[current_tick] - current_body_off;
+    //     }
+        
+    //     current_tick++;
+
+    //     // FIN PERIODO
+    //     if(current_tick >= total_ticks) {
+    //         seq_idx = (seq_idx + 1) % 4; 
+    //         plan_period(); 
+    //         return 0.0; 
+    //     }
+
+    //     if(current_tick < pts_swing) return (period * 0.5) / pts_swing;
+    //     else return (period * 0.5) / pts_shift;
+    // }
+
+    double update() {
+        if(!is_moving) return 0.02;
+
+        std::string active_leg = leg_order[seq_idx];
+        
+        // CALCULAR DELTA 
+        Vector3d current_body_off = body_offset_traj[current_tick];
+        Vector3d prev_body_off = (current_tick == 0) ? Vector3d(0,0,0) : body_offset_traj[current_tick - 1];
+        Vector3d delta_body = current_body_off - prev_body_off;
+
+        // 1. APLICAR DELTA A TODAS (Arrastre)
+        for(auto& [leg, pos] : current_feet_pos) {
+            pos -= delta_body;
         }
-    }
-
-    void _reset_to_stand() {
-        state = "STAND";
-        step_queue = 0;
-        body_shift = Vector3d(0,0,0);
-        current_vel = Vector3d(0,0,0);
-        for (auto const& [key, val] : default_stance) {
-            phase_start[key] = feet_state[key];
-            phase_end[key] = default_stance[key];
+        if (current_tick < pts_shift) {
         }
-    }
-
-    void update(double dt) {
-        if (state == "STAND" && step_queue > 0) state = "SEQUENCE_RUNNING";
-        if (state != "SEQUENCE_RUNNING") return;
-
-        double t_total = swing_time + shift_time;
-        step_timer += dt;
-        std::string active_leg = sequence[current_seq_idx];
-        Vector3d step_dist_vector = current_vel * t_total;
-
-        // LATCHING (Memoria de paso)
-        if (step_timer <= dt * 1.5) {
-            for (auto const& [leg, val] : default_stance) {
-                Vector3d home = default_stance[leg]; 
-                phase_start[leg] = feet_state[leg];
-                if (leg == active_leg) {
-                    phase_end[leg] = home + (step_dist_vector * 1.5);
-                    phase_end[leg][2] = 0.0; 
-                } else {
-                    phase_end[leg] = phase_start[leg] - step_dist_vector;
-                    phase_end[leg][2] = 0.0;
-                }
+        else {
+            int swing_idx = current_tick - pts_shift;
+            if (swing_idx < swing_traj_abs.size()) {
+                current_feet_pos[active_leg] = swing_traj_abs[swing_idx] - current_body_off;
             }
         }
         
-        // CALCULO CONTINUO DE BALANCEO (V5 Stable Logic)
-        double sx = (active_leg == "FL" || active_leg == "FR") ? 1.0 : -1.0;
-        double sy = (active_leg == "FL" || active_leg == "BL") ? 1.0 : -1.0;
-        target_shift_val = Vector3d(-sx * lean_factor, -sy * lean_factor, 0.0);
+        current_tick++;
 
-        Vector3d zero(0,0,0);
-        double p_stance = step_timer / t_total;
-        
-        // Ejecución (Usando get_staircase_pos suavizada)
-        for (auto const& [leg, val] : default_stance) {
-            if (leg == active_leg) continue;
-            feet_state[leg] = get_staircase_pos(phase_start[leg], phase_end[leg], p_stance, stance_points, 0.0);
+        // FIN DEL PERIODO
+        if(current_tick >= total_ticks) {
+            seq_idx = (seq_idx + 1) % 4; 
+            plan_period(); 
+            return 0.0; 
         }
 
-        if (step_timer < shift_time) {
-            double p_sh = step_timer / shift_time;
-            body_shift = get_staircase_pos(zero, target_shift_val, p_sh, shift_points);
-            feet_state[active_leg] = phase_start[active_leg];
-            feet_state[active_leg][2] = 0.0;
-        } else {
-            double time_in_return = step_timer - shift_time;
-            double p_sh = time_in_return / swing_time;
-            body_shift = get_staircase_pos(target_shift_val, zero, p_sh, shift_points);
-            
-            double p_swing = (step_timer - shift_time) / swing_time;
-            feet_state[active_leg] = get_staircase_pos(phase_start[active_leg], phase_end[active_leg], p_swing, swing_points, lift_height);
-        }
-
-        if (step_timer >= t_total) {
-            step_timer = 0.0;
-            step_queue -= 1;
-            feet_state[active_leg] = phase_end[active_leg];
-            feet_state[active_leg][2] = 0.0;
-            body_shift = Vector3d(0,0,0);
-            current_seq_idx = (current_seq_idx + 1) % 4;
-            current_vel = next_vel;
-            if (step_queue <= 0) _reset_to_stand();
-        }
+        if(current_tick < pts_shift) return (period * 0.5) / pts_shift;
+        else return (period * 0.5) / pts_swing;
     }
+
 };
 
 // ==========================================
-// 6. MAIN (EJECUCIÓN TIPO SEBAS)
+// MAIN
 // ==========================================
 int main() {
     signal(SIGINT, signal_handler);
     
-    // Setup SHM
     int shm_fd = shm_open(SHM_NAME, O_CREAT | O_RDWR, 0666);
     if (shm_fd == -1) { perror("Error SHM"); return 1; }
     ftruncate(shm_fd, SHM_SIZE);
     void* ptr = mmap(0, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
     SharedData* shm_data = (SharedData*)ptr;
-    memset(shm_data, 0, SHM_SIZE); // Limpiar memoria al inicio
+    memset(shm_data, 0, SHM_SIZE);
+
+    GaitGeneratorV7 brain;
     
-    GaitGenerator brain;
+    // Configuración
+    // brain.period = 0.5;
+    // brain.step_length_x = 0.07; 
+    // brain.pts_swing = 20;
+    // brain.pts_shift = 20;
     
-    // Tiempos
-    // Usamos 20ms como base para el ciclo lógico, pero ajustaremos el sleep con chrono
-    const double target_dt = 0.02; 
+    // brain.lean_y = 0.015; 
+    // brain.lean_x = 0.008; 
 
-    // --- 1. POSE INICIAL (STAND) ---
-    std::cout << "=== HYBRID ROBOT CONTROLLER ===" << std::endl;
-    std::cout << ">>> ESTADO: STAND (Presiona ENTER para iniciar)" << std::endl;
+    // --- FASE 1: INICIO SEGURO (STAND) ---
+    std::cout << "=== REX V7.2: SAFETY START ===" << std::endl;
+    std::cout << "1. Putting robot in STAND_XYZ..." << std::endl;
 
-    auto update_shm_from_brain = [&](Vector3d override_body_shift = Vector3d(0,0,0), bool use_override = false) {
-        Vector3d body_shift = use_override ? override_body_shift : brain.body_shift;
-        Vector3d total_body_pos = body_shift;
-        total_body_pos[2] += brain.walking_height;
+    // Calcular y enviar postura inicial (STAND)
+    for(int i=0; i<4; i++) {
+        std::string legs[4] = {"FL", "FR", "BL", "BR"};
+        std::string leg = legs[i];
+        
+        // Usamos directamente la posición STAND definida por el usuario
+        Vector3d pos = STAND_XYZ[leg];
+        
+        bool is_right = (leg == "FR" || leg == "BR");
+        LegAngles angs = solve_IK(pos[0], pos[1], pos[2], is_right);
+        
+        shm_data->angles[i][0] = angs.th1;
+        shm_data->angles[i][1] = angs.th2;
+        shm_data->angles[i][2] = angs.th3;
+        
+        // Tiempo suave para levantarse (2 segundos)
+        double startup_time = 2.0;
+        shm_data->times[i][0] = startup_time;
+        shm_data->times[i][1] = startup_time;
+        shm_data->times[i][2] = startup_time;
+    }
+    shm_data->is_walking = true;
 
-        std::string leg_order[4] = {"FL", "FR", "BL", "BR"};
+    std::cout << ">>> ROBOT READY IN STAND POSITION." << std::endl;
+    std::cout << ">>> PRESS ENTER TO START WALKING..." << std::endl;
+    std::cin.get(); // BLOQUEO HASTA ENTER
+
+    // Planificar el primer paso desde la posición actual
+    brain.plan_period();
+
+    // --- FASE 2: BUCLE DE MARCHA ---
+    std::cout << ">>> WALKING STARTED (Ctrl+C to Stop & Sit)" << std::endl;
+    
+    while (!stop_signal_received) {
+        auto t_start = std::chrono::steady_clock::now();
+
+        double dt_target = brain.update();
+        if(dt_target == 0.0) continue;
+
+        // int peak_swing_tick = brain.pts_shift + (brain.pts_swing / 2);
+
+        // // Si estamos en ese tick exacto...
+        // if (brain.current_tick == peak_swing_tick) {
+        //     std::cout << "\n!!! FREEZE: Pata en el punto mas alto (Z Max) !!!" << std::endl;
+        //     std::cout << ">>> Presiona ENTER para continuar el paso..." << std::endl;
+        //     std::cin.get(); 
+        //     // std::this_thread::sleep_for(std::chrono::seconds(3));
+            
+        //     std::cout << ">>> Resuming..." << std::endl;
+        // }
+
+
+        // BREAK
+
+        if (!brain.swing_traj_abs.empty() && brain.current_tick > brain.pts_shift) {
+            
+            int local_peak_idx = 0;
+            double max_z_found = -999.0;
+            
+            for(size_t k = 0; k < brain.swing_traj_abs.size(); k++) {
+                if (brain.swing_traj_abs[k].z() > max_z_found) {
+                    max_z_found = brain.swing_traj_abs[k].z();
+                    local_peak_idx = k;
+                }
+            }
+
+            int global_peak_tick = brain.pts_shift + local_peak_idx;
+
+            if (brain.current_tick == global_peak_tick + 1) {
+                std::cout << "\n!!! FREEZE EXACTO: Altura Maxima (Z=" << max_z_found << ") !!!" << std::endl;
+                std::cout << ">>> Pata " << brain.leg_order[brain.seq_idx] << " en el aire." << std::endl;
+                std::cout << ">>> Presiona ENTER para bajar..." << std::endl;
+                std::cin.get(); 
+            }
+        }
+
+        // FIN BREAK
+
+        std::string legs[4] = {"FL", "FR", "BL", "BR"};
         for(int i=0; i<4; i++) {
-            std::string leg = leg_order[i];
-            Vector3d foot_local = brain.feet_state[leg];
-            
-            // IK Input: Pie - Cuerpo
-            Vector3d ik_target = foot_local - total_body_pos;
-            bool is_right = (leg == "FR" || leg == "BR");
-            
-            LegAngles angs = solve_IK(ik_target[0], ik_target[1], ik_target[2], is_right);
+            Vector3d pos = brain.current_feet_pos[legs[i]];
+            bool is_right = (legs[i] == "FR" || legs[i] == "BR");
+            LegAngles angs = solve_IK(pos[0], pos[1], pos[2], is_right);
             
             shm_data->angles[i][0] = angs.th1;
             shm_data->angles[i][1] = angs.th2;
             shm_data->angles[i][2] = angs.th3;
             
-            // TIEMPO DE INTERPOLACIÓN (Factor de seguridad Sebas 1.2x)
-            double safe_time = target_dt * 1.2;
+            double safe_time = dt_target * 1.2;
             shm_data->times[i][0] = safe_time;
             shm_data->times[i][1] = safe_time;
             shm_data->times[i][2] = safe_time;
         }
-    };
-
-    // Calcular pose inicial
-    brain.body_shift = Vector3d(0,0,0);
-    update_shm_from_brain(); 
-    shm_data->is_walking = true; // Activar servos
-
-    std::cin.get(); // Esperar Enter
-
-    // --- 2. CAMINATA (BUCLE DE TIEMPO REAL) ---
-    brain.trigger_steps(999999, Vector3d(0.4, 0.0, 0.0)); // 0.4 de velocidad para empezar suave
-    std::cout << ">>> RUNNING (Precision Loop)..." << std::endl;
-
-    while (!stop_signal_received) {
-        auto t_start = std::chrono::steady_clock::now();
-
-        // A. Actualizar Lógica
-        brain.update(target_dt);
-
-        // B. Calcular IK y Escribir en SHM
-        update_shm_from_brain();
         shm_data->is_walking = true;
 
-        // C. Feedback Visual Consola
-        printf("\r[RUN] BodyX: %.3f | FL_Z: %.3f | DT: %.3fs", 
-               brain.body_shift[0], brain.feet_state["FL"][2], target_dt);
-        fflush(stdout);
-
-        // D. Control de Tiempo Preciso (Chrono)
         auto t_end = std::chrono::steady_clock::now();
         std::chrono::duration<double> elapsed = t_end - t_start;
-        double sleep_seconds = target_dt - elapsed.count();
+        double sleep_s = dt_target - elapsed.count();
+        if(sleep_s > 0) std::this_thread::sleep_for(std::chrono::duration<double>(sleep_s));
         
-        if (sleep_seconds > 0) {
-            std::this_thread::sleep_for(std::chrono::duration<double>(sleep_seconds));
-        }
+        // Debug
+        std::string phase = (brain.current_tick < brain.pts_swing) ? "SWING" : "SHIFT";
+        printf("\r[%s] Tick:%2d | FL_X:%.3f | BodyY:%.4f", 
+               phase.c_str(), brain.current_tick, 
+               brain.current_feet_pos["FL"][0], 
+               brain.body_offset_traj[brain.current_tick][1]);
+        fflush(stdout);
     }
 
-    // --- 3. APAGADO SEGURO (INIT POSE) ---
-    std::cout << "\n\n>>> DETENIENDO... INIT POSE." << std::endl;
+    // --- FASE 3: APAGADO CONTROLADO (INIT POSE) ---
+    std::cout << "\n\n>>> INTERRUPT DETECTED. GOING TO INIT_XYZ (SITTING DOWN)..." << std::endl;
     
-    // Resetear cerebro a stand
-    brain._reset_to_stand(); 
-    // Usar INIT_XYZ para la pose final
-    for (auto const& [name, pos] : INIT_XYZ) {
-        // Truco: Ponemos el feet_state en la posición INIT y el cuerpo en 0
-        // Como INIT ya es relativa al hombro, target = INIT
-        brain.feet_state[name] = pos; 
-        brain.feet_state[name][2] += brain.walking_height; // Compensar resta interna
+    // Capturamos dónde quedaron las patas al interrumpir
+    std::map<std::string, Vector3d> last_pos = brain.current_feet_pos;
+    
+    // Duración de la transición a reposo (segundos)
+    double shutdown_duration = 2.0;
+    int shutdown_steps = 50;
+    double dt_shutdown = shutdown_duration / shutdown_steps;
+
+    for(int k=0; k <= shutdown_steps; k++) {
+        double t = (double)k / (double)shutdown_steps; // 0.0 a 1.0
+        double t_smooth = ease_in_out(t);
+        
+        std::string legs[4] = {"FL", "FR", "BL", "BR"};
+        for(int i=0; i<4; i++) {
+            std::string leg = legs[i];
+            
+            // Interpolación Lineal: Last_Pos -> INIT_XYZ
+            Vector3d start = last_pos[leg];
+            Vector3d end = INIT_XYZ[leg];
+            Vector3d current = start + (end - start) * t_smooth;
+            
+            bool is_right = (leg == "FR" || leg == "BR");
+            LegAngles angs = solve_IK(current[0], current[1], current[2], is_right);
+            
+            shm_data->angles[i][0] = angs.th1;
+            shm_data->angles[i][1] = angs.th2;
+            shm_data->angles[i][2] = angs.th3;
+            
+            // Tiempo un poco mayor al ciclo para suavidad extrema
+            double time_s = dt_shutdown * 1.5;
+            shm_data->times[i][0] = time_s;
+            shm_data->times[i][1] = time_s;
+            shm_data->times[i][2] = time_s;
+        }
+        shm_data->is_walking = true;
+        std::this_thread::sleep_for(std::chrono::duration<double>(dt_shutdown));
     }
-    // Forzamos body_shift 0 para que el calculo final sea puro
-    update_shm_from_brain(Vector3d(0,0,0), true);
-    
-    std::this_thread::sleep_for(std::chrono::seconds(1)); // Dar tiempo a llegar
-    
-    shm_data->is_walking = false; // Desactivar
+
+    std::cout << ">>> ROBOT IS SITTING. CLOSING..." << std::endl;
+    shm_data->is_walking = false;
     munmap(ptr, SHM_SIZE);
     shm_unlink(SHM_NAME);
     close(shm_fd);
-    
-    std::cout << "Sistema finalizado." << std::endl;
     return 0;
 }

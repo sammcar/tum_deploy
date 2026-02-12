@@ -5,23 +5,27 @@
 #include <unistd.h>
 #include <future>
 #include <iomanip>
-#include <csignal> // NECESARIA PARA CAPTURAR CTRL+C
-#include <atomic>  // NECESARIA PARA LA BANDERA SEGURA
+#include <csignal>
+#include <atomic>
+#include <cstring>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <limits>
+#include <thread> // Necesario para sleep_until
+
 #include "moteus.h"
 
 namespace moteus = mjbots::moteus;
 
 // ============================================================
-//    VARIABLES GLOBALES DE CONTROL
+//    VARIABLES GLOBALES Y SEÑALES
 // ============================================================
 std::atomic<bool> g_running{true};
-
-void SignalHandler(int) {
-    g_running = false; // Rompe los bucles suavemente al presionar Ctrl+C
-}
+void SignalHandler(int) { g_running = false; }
 
 // ============================================================
-//    TU ESTRUCTURA DE DATOS Y CONSTANTES
+//    AJUSTES MECÁNICOS Y DE SEGURIDAD
 // ============================================================
 const double kFactorMultiplicador = 1.57;
 const double kFactorMultiplicador2 = 0.888;
@@ -34,25 +38,69 @@ struct MotorConfig {
     double accel_limit;
 };
 
-// Configuraciones específicas por articulación
-const MotorConfig kCoxaConfig =  {.kp = 1.0, .kd = 1.0, .max_torque = 12.0, .vel_limit = 4.0, .accel_limit = 5.0};
-const MotorConfig kFemurConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 12.0, .vel_limit = 4.0, .accel_limit = 5.0};
-const MotorConfig kTibiaConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 12.0, .vel_limit = 4.0, .accel_limit = 5.0};
+const MotorConfig kCoxaConfig =  {.kp = 1.0, .kd = 1.0, .max_torque = 6.0, .vel_limit = 10.0, .accel_limit = 20.0};
+const MotorConfig kFemurConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 6.0, .vel_limit = 10.0, .accel_limit = 20.0};
+const MotorConfig kTibiaConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 6.0, .vel_limit = 10.0, .accel_limit = 20.0};
 
 const std::vector<int> kMotorIds = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
 
 struct SharedData {
-    double angles[4][3];
-    double times[4][3];
-    bool is_walking; 
+    double angles[4][3];      // Posición [Grados]
+    double velocities[4][3];  // Velocidad [Grados/s]
+    bool is_walking;      
+};
+
+struct SafetyState {
+    double current_pos = 0.0;
 };
 
 // ============================================================
-//    HELPERS DE LÓGICA MECATRÓNICA
+//    GESTOR DE MEMORIA COMPARTIDA
 // ============================================================
+class MemoryManager {
+public:
+    const char *shm_name = "/rex_shm";
+    int shm_fd = -1;
+    void *ptr = MAP_FAILED;
+    SharedData *data = nullptr;
+
+    MemoryManager() {
+        shm_fd = shm_open(shm_name, O_RDWR | O_CREAT, 0666);
+        if (shm_fd == -1) return;
+
+        struct stat shm_stat;
+        fstat(shm_fd, &shm_stat);
+        
+        bool is_new = (shm_stat.st_size == 0);
+        if (is_new) ftruncate(shm_fd, sizeof(SharedData));
+
+        ptr = mmap(0, sizeof(SharedData), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+        data = static_cast<SharedData *>(ptr);
+
+        if (is_new) std::memset(data, 0, sizeof(SharedData));
+    }
+
+    ~MemoryManager() {
+        if (ptr != MAP_FAILED) munmap(ptr, sizeof(SharedData));
+        if (shm_fd != -1) close(shm_fd);
+    }
+    
+    bool is_valid() { return data != nullptr; }
+};
+
+// ============================================================
+//    MATEMÁTICAS
+// ============================================================
+double CalculateMinimumJerk(double t_elapsed, double t_total, double p_start, double p_end) {
+    if (t_total < 0.001 || t_elapsed >= t_total) return p_end;
+    if (t_elapsed <= 0) return p_start;
+    double u = t_elapsed / t_total;
+    double poly = (u * u * u) * (10.0 + u * (-15.0 + 6.0 * u));
+    return p_start + (p_end - p_start) * poly;
+}
 
 const MotorConfig* GetMotorConfig(int id) {
-    int type = (id - 1) % 3; // 0=Coxa, 1=Femur, 2=Tibia
+    int type = (id - 1) % 3; 
     if (type == 0) return &kCoxaConfig;
     if (type == 1) return &kFemurConfig;
     return &kTibiaConfig;
@@ -65,233 +113,157 @@ double GetCalibratedTarget(int id, double target_deg) {
     return final_target;
 }
 
-// ============================================================
-//    SISTEMA DE VISUALIZACIÓN Y TRANSPORTE
-// ============================================================
-
-void PrintTelemetry(const std::vector<moteus::CanFdFrame>& receive_frames) {
-    static int counter = 0;
-    if (counter++ % 10 != 0) return; // 10Hz refresh
-
-    std::vector<double> positions(13, 0.0);
-    std::vector<double> torques(13, 0.0);
-    std::vector<bool> online(13, false);
-
-    for (const auto& frame : receive_frames) {
-        if (frame.source >= 1 && frame.source <= 12) {
-            const auto res = moteus::Query::Parse(frame.data, frame.size);
-            positions[frame.source] = res.position * 360.0;
-            torques[frame.source] = res.torque;
-            online[frame.source] = true;
-        }
-    }
-
-    std::cout << "\033[H"; 
-    std::cout << "==================================================================\n";
-    std::cout << "             MONITOR DE ESTADO (TOM) - CALIBRADO                  \n";
-    std::cout << "==================================================================\n";
-    std::cout << " ID | TYPE  |  POS (deg) |  TORQUE (Nm) | STATUS  | CONFIG (Kp/Kd)\n";
-    std::cout << "----|-------|------------|--------------|---------|---------------\n";
-
-    for(int id : kMotorIds) {
-        const MotorConfig* cfg = GetMotorConfig(id);
-        std::string type = ((id-1)%3==0) ? "COXA " : ((id-1)%3==1) ? "FEMUR" : "TIBIA";
-        
-        std::cout << " " << std::setw(2) << id << " | " << type << " | ";
-        
-        if (online[id]) {
-            std::string t_color = (std::abs(torques[id]) > cfg->max_torque * 0.8) ? "\033[1;31m" : "\033[0m";
-            std::cout << std::fixed << std::setprecision(2) << std::setw(10) << positions[id] << " | "
-                      << t_color << std::setw(12) << torques[id] << "\033[0m | "
-                      << "\033[1;32m  OK   \033[0m | "
-                      << std::fixed << std::setprecision(1) << cfg->kp << "/" << cfg->kd;
-        } else {
-            std::cout << "   --.-   |      --.-    | \033[1;31mOFFLINE\033[0m | --/--";
-        }
-        std::cout << "\n";
-        if (id % 3 == 0 && id < 12) std::cout << "----+-------+------------+--------------+---------+---------------\n";
-    }
-    std::cout << "==================================================================\n" 
-              << " Presione Ctrl+C para detener los motores de forma segura.\n" << std::flush;
-}
-
 void SafeTransportCycle(std::shared_ptr<moteus::Transport> transport, 
                         const std::vector<moteus::CanFdFrame>& send_frames, 
-                        std::vector<moteus::CanFdFrame>* receive_frames) {
+                        std::vector<moteus::CanFdFrame>* receive_frames = nullptr) {
     std::promise<void> cycle_done;
-    transport->Cycle(
-        send_frames.data(),
-        send_frames.size(),
-        receive_frames,
-        [&cycle_done](int) { cycle_done.set_value(); }
-    );
+    transport->Cycle(send_frames.data(), send_frames.size(), receive_frames, [&cycle_done](int) { cycle_done.set_value(); });
     cycle_done.get_future().wait(); 
-}
-
-// ============================================================
-//    FUNCIONES DE CONTROL (MOVIMIENTO Y HOLD)
-// ============================================================
-
-void HoldPosition(std::vector<std::shared_ptr<moteus::Controller>>& controllers, 
-                  std::shared_ptr<moteus::Transport> transport, 
-                  double target_deg, 
-                  double duration_s) {
-    
-    std::vector<moteus::CanFdFrame> send_frames;
-    std::vector<moteus::CanFdFrame> receive_frames;
-    int steps = static_cast<int>(duration_s * 100); 
-
-    // AÑADIDO: && g_running para poder cancelar
-    for (int step = 0; step < steps && g_running; ++step) {
-        send_frames.clear();
-        for (auto& controller : controllers) {
-            int id = controller->options().id;
-            const MotorConfig* cfg = GetMotorConfig(id);
-            
-            double calibrated_deg = GetCalibratedTarget(id, target_deg);
-            double target_rev = calibrated_deg / 360.0;
-
-            moteus::PositionMode::Command cmd;
-            cmd.position = target_rev;
-            cmd.velocity = 0.0;
-            cmd.kp_scale = cfg->kp;
-            cmd.kd_scale = cfg->kd;
-            cmd.maximum_torque = cfg->max_torque;
-            cmd.velocity_limit = cfg->vel_limit;
-            cmd.accel_limit = cfg->accel_limit;
-            
-            send_frames.push_back(controller->MakePosition(cmd));
-        }
-        SafeTransportCycle(transport, send_frames, &receive_frames);
-        PrintTelemetry(receive_frames);
-        usleep(10000); 
-    }
-}
-
-void MoveToTarget(std::vector<std::shared_ptr<moteus::Controller>>& controllers, 
-                  std::shared_ptr<moteus::Transport> transport, 
-                  double target_deg, 
-                  double duration_s) {
-    
-    std::vector<double> start_positions(13, 0.0);
-    std::vector<moteus::CanFdFrame> send_frames;
-    std::vector<moteus::CanFdFrame> receive_frames;
-
-    send_frames.clear();
-    for (auto& c : controllers) send_frames.push_back(c->MakePosition({}));
-    SafeTransportCycle(transport, send_frames, &receive_frames);
-
-    for (const auto& frame : receive_frames) {
-        if (frame.source >= 1 && frame.source <= 12) {
-            const auto res = moteus::Query::Parse(frame.data, frame.size);
-            start_positions[frame.source] = res.position;
-        }
-    }
-
-    int steps = static_cast<int>(duration_s * 100); 
-
-    // AÑADIDO: && g_running para poder cancelar
-    for (int step = 0; step <= steps && g_running; ++step) {
-        double alpha = (double)step / steps;
-        send_frames.clear();
-
-        for (auto& controller : controllers) {
-            int id = controller->options().id;
-            const MotorConfig* cfg = GetMotorConfig(id);
-
-            double calibrated_target_deg = GetCalibratedTarget(id, target_deg);
-            double target_rev = calibrated_target_deg / 360.0;
-            double start_rev = start_positions[id];
-
-            moteus::PositionMode::Command cmd;
-            cmd.position = start_rev + (target_rev - start_rev) * alpha;
-            cmd.velocity = (target_rev - start_rev) / duration_s;
-            cmd.kp_scale = cfg->kp;
-            cmd.kd_scale = cfg->kd;
-            cmd.maximum_torque = cfg->max_torque;
-            cmd.velocity_limit = cfg->vel_limit;
-            cmd.accel_limit = cfg->accel_limit;
-            
-            send_frames.push_back(controller->MakePosition(cmd));
-        }
-
-        SafeTransportCycle(transport, send_frames, &receive_frames);
-        PrintTelemetry(receive_frames);
-        usleep(10000); 
-    }
 }
 
 // ============================================================
 //    MAIN
 // ============================================================
 int main(int argc, char** argv) {
-    // 1. REGISTRAR SEÑAL DE APAGADO
     std::signal(SIGINT, SignalHandler);
-
     moteus::Controller::DefaultArgProcess(argc, argv);
     auto transport = moteus::Controller::MakeSingletonTransport({});
 
+    MemoryManager memory;
+    if (!memory.is_valid()) return 1;
+
     std::vector<std::shared_ptr<moteus::Controller>> controllers;
+    std::vector<SafetyState> motor_states(13); 
+
     for (int id : kMotorIds) {
         moteus::Controller::Options options;
         options.id = id;
         options.transport = transport;
-        options.query_format.position = moteus::kFloat;
-        options.query_format.velocity = moteus::kFloat;
-        options.query_format.torque = moteus::kFloat;
-        options.position_format.kp_scale = moteus::kFloat;
-        options.position_format.kd_scale = moteus::kFloat;
-        options.position_format.velocity_limit = moteus::kFloat;
-        options.position_format.accel_limit = moteus::kFloat;
+        options.position_format.position = moteus::kFloat; 
+        options.position_format.velocity = moteus::kFloat; 
+        options.position_format.kp_scale = moteus::kInt16;
+        options.position_format.kd_scale = moteus::kInt16;
         controllers.push_back(std::make_shared<moteus::Controller>(options));
     }
 
     std::cout << "\033[2J"; 
 
-    // 2. Ir a Cero
-    if (g_running) MoveToTarget(controllers, transport, 0.0, 3.0); 
+    // 1. LECTURA INICIAL
+    std::vector<moteus::CanFdFrame> initial_receive;
+    std::vector<moteus::CanFdFrame> initial_send;
+    for (auto& c : controllers) initial_send.push_back(c->MakePosition({}));
+    SafeTransportCycle(transport, initial_send, &initial_receive);
 
-    // 3. Repetir 3 veces
-    for (int i = 1; i <= 3 && g_running; ++i) {
-        MoveToTarget(controllers, transport, 10.0, 1.5);
-        HoldPosition(controllers, transport, 10.0, 2.0);
-        MoveToTarget(controllers, transport, 0.0, 1.5);
+    for (const auto& frame : initial_receive) {
+        if (frame.source >= 1 && frame.source <= 12) {
+            const auto res = moteus::Query::Parse(frame.data, frame.size);
+            motor_states[frame.source].current_pos = res.position;
+        }
     }
 
-    // 4. Bucle Final: Mantener 0 grados
-    std::vector<moteus::CanFdFrame> send_frames;
-    std::vector<moteus::CanFdFrame> receive_frames;
-    send_frames.reserve(12);
+    // 2. HOMING INICIAL (3 segundos)
+    auto homing_start = std::chrono::steady_clock::now();
+    double homing_duration = 3.0;
+    std::cout << ">> EJECUTANDO HOMING INICIAL A 0.0..." << std::endl;
 
-    while (g_running) { // Se rompe cuando pulsas Ctrl+C
-        send_frames.clear();
-        for (auto& controller : controllers) {
-            int id = controller->options().id;
+    while (g_running) {
+        auto now = std::chrono::steady_clock::now();
+        double elapsed = std::chrono::duration<double>(now - homing_start).count();
+        if (elapsed > homing_duration) break;
+
+        std::vector<moteus::CanFdFrame> frames;
+        for (auto& c : controllers) {
+            int id = c->options().id;
+            double pos = CalculateMinimumJerk(elapsed, homing_duration, motor_states[id].current_pos, 0.0);
+            
+            moteus::PositionMode::Command cmd;
+            cmd.position = pos;
+            cmd.kp_scale = 0.5; cmd.kd_scale = 0.5; cmd.maximum_torque = 5.0;
+            frames.push_back(c->MakePosition(cmd));
+        }
+        SafeTransportCycle(transport, frames, nullptr);
+        usleep(10000); 
+    }
+
+    for (int id : kMotorIds) motor_states[id].current_pos = 0.0;
+
+    // 3. BUCLE PRINCIPAL CON CONTROL DE TIEMPO DE ALTA PRECISIÓN
+    std::cout << ">> SISTEMA LISTO. ESPERANDO IS_WALKING..." << std::endl;
+    
+    auto safety_home_start = std::chrono::steady_clock::now();
+    bool was_walking = false; 
+
+    // Configuración del metrónomo (200Hz = 5000 microsegundos)
+    const auto period = std::chrono::microseconds(5000);
+    auto next_cycle = std::chrono::steady_clock::now();
+
+    while (g_running) {
+        // Establecer el momento exacto en el que debe despertar el próximo ciclo
+        next_cycle += period;
+
+        bool is_walking_mode = memory.data->is_walking;
+        std::vector<moteus::CanFdFrame> send_frames;
+
+        if (was_walking && !is_walking_mode) {
+            std::cout << "\n>> PARADA DETECTADA: Regresando a Home suavemente..." << std::endl;
+            safety_home_start = std::chrono::steady_clock::now();
+        }
+        was_walking = is_walking_mode;
+
+        for (size_t i = 0; i < controllers.size(); ++i) {
+            int id = kMotorIds[i];
             const MotorConfig* cfg = GetMotorConfig(id);
+            int row = (id - 1) / 3;
+            int col = (id - 1) % 3;
+
+            double cmd_pos_rev = 0.0;
+            double cmd_vel_rev_s = 0.0;
+
+            if (is_walking_mode) {
+                double target_deg = GetCalibratedTarget(id, memory.data->angles[row][col]);
+                double target_vel_deg = GetCalibratedTarget(id, memory.data->velocities[row][col]);
+                
+                cmd_pos_rev = target_deg / 360.0;
+                cmd_vel_rev_s = target_vel_deg / 360.0;
+                motor_states[id].current_pos = cmd_pos_rev;
+            } else {
+                if (std::abs(motor_states[id].current_pos) > 0.0001) {
+                    auto now_safety = std::chrono::steady_clock::now();
+                    double elapsed = std::chrono::duration<double>(now_safety - safety_home_start).count();
+                    double duration = 2.0;
+
+                    cmd_pos_rev = CalculateMinimumJerk(elapsed, duration, motor_states[id].current_pos, 0.0);
+                    if (elapsed > duration) motor_states[id].current_pos = 0.0;
+                } else {
+                    cmd_pos_rev = 0.0;
+                }
+                cmd_vel_rev_s = 0.0;
+            }
 
             moteus::PositionMode::Command cmd;
-            cmd.position = 0.0;
-            cmd.velocity = 0.0;
-            cmd.kp_scale = cfg->kp;
-            cmd.kd_scale = cfg->kd;
-            cmd.maximum_torque = cfg->max_torque;
+            cmd.position = cmd_pos_rev;
+            cmd.velocity = cmd_vel_rev_s;
+            cmd.kp_scale = (id == 10 || id == 11) ? 0.8 : 1.0;
+            cmd.kd_scale = (id == 10 || id == 11) ? 0.8 : 1.0;
             cmd.velocity_limit = cfg->vel_limit;
             cmd.accel_limit = cfg->accel_limit;
+            cmd.maximum_torque = cfg->max_torque;
             
-            send_frames.push_back(controller->MakePosition(cmd));
+            send_frames.push_back(controllers[i]->MakePosition(cmd));
         }
 
-        SafeTransportCycle(transport, send_frames, &receive_frames);
-        PrintTelemetry(receive_frames);
-        usleep(10000);
-    }
-    
-    // 5. APAGADO SEGURO
-    std::cout << "\n\n--- DETENIENDO MOTORES (STOP MODE) ---\n";
-    for (auto& controller : controllers) {
-        controller->SetStop();
-    }
-    usleep(50000); 
+        SafeTransportCycle(transport, send_frames, nullptr);
 
+        // Control de salud del ciclo: Si nos pasamos del tiempo, resincronizar
+        auto now = std::chrono::steady_clock::now();
+        if (now > next_cycle) {
+            next_cycle = now; // Saltamos la espera para intentar recuperar el tiempo
+        } else {
+            // Dormir con precisión hasta el inicio del siguiente periodo de 5ms
+            std::this_thread::sleep_until(next_cycle);
+        }
+    }
+
+    for (auto& c : controllers) c->SetStop();
     return 0;
 }
