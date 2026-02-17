@@ -18,28 +18,20 @@
 namespace moteus = mjbots::moteus;
 
 // ============================================================
-//    TELEMETRÍA (Thread-Safe) - ANEXADO DE one_leg_ver
+//    CONSTANTES FÍSICAS (NUEVO)
 // ============================================================
-struct SharedTelemetry {
-    std::atomic<double> position[14]; // Soporta hasta ID 13
-    std::atomic<double> velocity[14];
-    std::atomic<double> torque[14];
-    std::atomic<double> cycle_time_ms{0.0};
-};
-
-SharedTelemetry global_telemetry;
-
-// ============================================================
-//    CONSTANTES FÍSICAS
-// ============================================================
+// Ajusta estas longitudes (en metros) a las reales de tu robot
 const double L1 = 0.093; 
 const double L2 = 0.147; 
 const double L3 = 0.230;
 
 double CHASIS_MASS = 5.65;
-double LEG_MASS = 1.46; 
+double LEG_MASS = 1.46; // Masa de una pata completa
 double TOTAL_ROBOT_MASS = CHASIS_MASS + LEG_MASS * 4;
 
+// ============================================================
+//    FUNCIÓN MATEMÁTICA DE TORQUES (JACOBIANA)
+// ============================================================
 struct LegTorques {
     double t1_abad;
     double t2_hip;
@@ -50,26 +42,35 @@ LegTorques ComputeTorques(double q1, double q2, double q3,
                           double fx, double fy, double fz,
                           double l1, double l2, double l3, 
                           bool es_pata_derecha) {
+    
     double s1 = std::sin(q1), c1 = std::cos(q1);
     double s2 = std::sin(q2), c2 = std::cos(q2);
+    
+    // Simplificación trigonométrica
     double s23 = std::sin(q2 + q3);
     double c23 = std::cos(q2 + q3);
+    
     double side = es_pata_derecha ? -1.0 : 1.0; 
 
+    // --- MATRIZ JACOBIANA (Analítica) ---
     double j11 = 0;
     double j12 = l2*c2 + l3*c23;
     double j13 = l3*c23;
+    
     double j21 = -l1*side*s1 + (l2*c2 + l3*c23)*c1;
     double j22 = -(l2*s2 + l3*s23)*s1;
     double j23 = -l3*s23*s1; 
+    
     double j31 = l1*side*c1 + (l2*c2 + l3*c23)*s1;
     double j32 = (l2*s2 + l3*s23)*c1;
     double j33 = l3*s23*c1;
 
+    // --- CÁLCULO FINAL (Tau = J_transpuesta * F) ---
     LegTorques tau;
     tau.t1_abad = j11*fx + j21*fy + j31*fz;
     tau.t2_hip  = j12*fx + j22*fy + j32*fz;
     tau.t3_knee = j13*fx + j23*fy + j33*fz;
+
     return tau;
 }
 
@@ -83,30 +84,36 @@ const double kFactorMultiplicador = 1.00;
 const double kFactorMultiplicador2 = 0.56;
 
 struct MotorConfig {
-    double kp; double kd; double max_torque;
-    double vel_limit; double accel_limit;
+    double kp;
+    double kd;
+    double max_torque;
+    double vel_limit;
+    double accel_limit;
 };
 
+// Configuración sugerida para dinámica (KP más bajos, Torque alto disponible)
 const MotorConfig kCoxaConfig =  {.kp = 1.0, .kd = 1.0, .max_torque = 2.0, .vel_limit = 20.0, .accel_limit = 50.0};
 const MotorConfig kFemurConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 2.0, .vel_limit = 20.0, .accel_limit = 50.0};
 const MotorConfig kTibiaConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 2.0, .vel_limit = 20.0, .accel_limit = 50.0};
 
-const std::vector<int> kMotorIds = {1, 2, 3};
+const std::vector<int> kMotorIds = {10, 11, 12};
 
 // ============================================================
-//    MEMORIA COMPARTIDA
+//    MEMORIA COMPARTIDA (MODIFICADA)
 // ============================================================
 struct SharedData {
-    double angles[4][3];        
-    double velocities[4][3];    
-    double desired_accel[4][3]; 
-    double kp_scale[4][3];      
-    double kd_scale[4][3];      
-    bool is_stance[4];          
+    double angles[4][3];        // Posición deseada [Grados]
+    double velocities[4][3];    // Velocidad deseada [Grados/s]
+    double desired_accel[4][3]; // NUEVO: Aceleración cartesiana deseada [m/s^2] (X, Y, Z)
+    double kp_scale[4][3];      // Ganancia KP dinámica
+    double kd_scale[4][3];      // Ganancia KD dinámica
+    bool is_stance[4];          // NUEVO: Estado de la pata (true=Suelo, false=Aire)
     bool is_walking;      
 };
 
-struct SafetyState { double current_pos = 0.0; };
+struct SafetyState {
+    double current_pos = 0.0;
+};
 
 class MemoryManager {
 public:
@@ -120,10 +127,11 @@ public:
         if (shm_fd == -1) return;
         struct stat shm_stat;
         fstat(shm_fd, &shm_stat);
-        if (shm_stat.st_size == 0) ftruncate(shm_fd, sizeof(SharedData));
+        bool is_new = (shm_stat.st_size == 0);
+        if (is_new) ftruncate(shm_fd, sizeof(SharedData));
         ptr = mmap(0, sizeof(SharedData), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
         data = static_cast<SharedData *>(ptr);
-        if (shm_stat.st_size == 0) std::memset(data, 0, sizeof(SharedData));
+        if (is_new) std::memset(data, 0, sizeof(SharedData));
     }
     ~MemoryManager() {
         if (ptr != MAP_FAILED) munmap(ptr, sizeof(SharedData));
@@ -132,28 +140,6 @@ public:
     bool is_valid() { return data != nullptr; }
 };
 
-// ============================================================
-//    HILO MONITOR (ANEXADO DE one_leg_ver)
-// ============================================================
-void MonitorLoop() {
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    while (g_running) {
-        std::cout << "\033[H"; // Volver al inicio de la terminal
-        std::cout << "=== ATOM-51 TELEMETRY MONITOR ===" << std::endl;
-        std::cout << std::fixed << std::setprecision(3);
-        for (int id : kMotorIds) {
-            std::cout << "ID [" << id << "] Pos: " << global_telemetry.position[id].load(std::memory_order_relaxed) 
-                      << " | Vel: " << global_telemetry.velocity[id].load(std::memory_order_relaxed)
-                      << " | Trq: " << global_telemetry.torque[id].load(std::memory_order_relaxed) << std::endl;
-        }
-        std::cout << "Cycle: " << global_telemetry.cycle_time_ms.load(std::memory_order_relaxed) << "ms    " << std::endl;
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    }
-}
-
-// ============================================================
-//    UTILIDADES
-// ============================================================
 double CalculateMinimumJerk(double t_elapsed, double t_total, double p_start, double p_end) {
     if (t_total < 0.001 || t_elapsed >= t_total) return p_end;
     if (t_elapsed <= 0) return p_start;
@@ -196,7 +182,7 @@ int main(int argc, char** argv) {
     if (!memory.is_valid()) return 1;
 
     std::vector<std::shared_ptr<moteus::Controller>> controllers;
-    std::vector<SafetyState> motor_states(14); 
+    std::vector<SafetyState> motor_states(13); 
 
     for (int id : kMotorIds) {
         moteus::Controller::Options options;
@@ -204,20 +190,16 @@ int main(int argc, char** argv) {
         options.transport = transport;
         options.position_format.position = moteus::kFloat; 
         options.position_format.velocity = moteus::kFloat;
-        options.position_format.feedforward_torque = moteus::kFloat;
-        options.position_format.kp_scale = moteus::kFloat;
+        options.position_format.accel_limit = moteus::kFloat;
+        options.position_format.maximum_torque = moteus::kFloat;
+        options.position_format.feedforward_torque = moteus::kFloat; // IMPORTANTE: Habilitar esto
+        options.position_format.kp_scale = moteus::kFloat; // Cambiado a kFloat para mayor precisión
         options.position_format.kd_scale = moteus::kFloat;
-        
-        // --- ANEXO QUERY FORMAT DE one_leg_ver ---
-        options.query_format.position = moteus::kFloat;
-        options.query_format.velocity = moteus::kFloat;
-        options.query_format.torque = moteus::kFloat;
         
         controllers.push_back(std::make_shared<moteus::Controller>(options));
     }
 
     std::cout << "\033[2J"; 
-    std::thread monitor_thread(MonitorLoop); // Iniciar hilo de prints
 
     // --- 1. LECTURA INICIAL ---
     std::vector<moteus::CanFdFrame> initial_receive;
@@ -226,7 +208,7 @@ int main(int argc, char** argv) {
     SafeTransportCycle(transport, initial_send, &initial_receive);
 
     for (const auto& frame : initial_receive) {
-        if (frame.source >= 1 && frame.source <= 13) {
+        if (frame.source >= 1 && frame.source <= 12) {
             const auto res = moteus::Query::Parse(frame.data, frame.size);
             motor_states[frame.source].current_pos = res.position;
         }
@@ -235,6 +217,7 @@ int main(int argc, char** argv) {
     // --- 2. HOMING INICIAL ---
     auto homing_start = std::chrono::steady_clock::now();
     double homing_duration = 3.0;
+    std::cout << ">> EJECUTANDO HOMING INICIAL A 0.0..." << std::endl;
 
     while (g_running) {
         auto now = std::chrono::steady_clock::now();
@@ -242,117 +225,143 @@ int main(int argc, char** argv) {
         if (elapsed > homing_duration) break;
 
         std::vector<moteus::CanFdFrame> frames;
-        std::vector<moteus::CanFdFrame> rec_frames;
         for (auto& c : controllers) {
             int id = c->options().id;
             double pos = CalculateMinimumJerk(elapsed, homing_duration, motor_states[id].current_pos, 0.0);
+            
             moteus::PositionMode::Command cmd;
             cmd.position = pos;
             cmd.kp_scale = 0.5; cmd.kd_scale = 0.5; cmd.maximum_torque = 5.0;
             frames.push_back(c->MakePosition(cmd));
         }
-        SafeTransportCycle(transport, frames, &rec_frames);
-        
-        // --- PARSEO RETROALIMENTACIÓN EN HOMING ---
-        for (const auto& rx : rec_frames) {
-            const auto res = moteus::Query::Parse(rx.data, rx.size);
-            global_telemetry.position[rx.source].store(res.position, std::memory_order_relaxed);
-        }
-        usleep(5000); 
+        SafeTransportCycle(transport, frames, nullptr);
+        usleep(100); 
     }
 
-    std::vector<moteus::CanFdFrame> sync_rx;
-    std::vector<moteus::CanFdFrame> sync_tx;
-    for (auto& c : controllers) sync_tx.push_back(c->MakePosition({})); // Query pura
-    SafeTransportCycle(transport, sync_tx, &sync_rx);
-
-    for (const auto& frame : sync_rx) {
-        if (frame.source >= 1 && frame.source <= 13) {
-            const auto res = moteus::Query::Parse(frame.data, frame.size);
-            // Actualizamos el estado para que el bucle principal sepa dónde estamos
-            motor_states[frame.source].current_pos = res.position; 
-        }
-    }
+    for (int id : kMotorIds) motor_states[id].current_pos = 0.0;
 
     // --- 3. BUCLE DE CONTROL DINÁMICO ---
+    std::cout << ">> SISTEMA LISTO. CONTROL DINÁMICO ACTIVADO." << std::endl;
+    
     auto safety_home_start = std::chrono::steady_clock::now();
     bool was_walking = false; 
     const auto period = std::chrono::microseconds(5000); // 200Hz
     auto next_cycle = std::chrono::steady_clock::now();
 
     while (g_running) {
-        auto cycle_start = std::chrono::steady_clock::now();
         next_cycle += period;
         bool is_walking_mode = memory.data->is_walking;
         std::vector<moteus::CanFdFrame> send_frames;
-        std::vector<moteus::CanFdFrame> receive_frames;
 
-        if (was_walking && !is_walking_mode) safety_home_start = std::chrono::steady_clock::now();
+        if (was_walking && !is_walking_mode) {
+            std::cout << "\n>> PARADA DETECTADA: Regresando a Home..." << std::endl;
+            safety_home_start = std::chrono::steady_clock::now();
+        }
         was_walking = is_walking_mode;
 
         for (size_t i = 0; i < controllers.size(); ++i) {
             int id = kMotorIds[i];
             const MotorConfig* cfg = GetMotorConfig(id);
-            int row = (id - 1) / 3; int col = (id - 1) % 3;
+            int row = (id - 1) / 3; // Pata (0-3)
+            int col = (id - 1) % 3; // Articulación (0-2)
 
-            double cmd_pos_rev = 0.0; double cmd_vel_rev_s = 0.0; double cmd_torque_nm = 0.0;
+            double cmd_pos_rev = 0.0;
+            double cmd_vel_rev_s = 0.0;
+            double cmd_torque_nm = 0.0;
 
             if (is_walking_mode) {
+                // A. Obtener Cinemática Deseada
                 double target_deg = GetCalibratedTarget(id, memory.data->angles[row][col]);
                 double target_vel_deg = GetCalibratedTarget(id, memory.data->velocities[row][col]);
+                
                 cmd_pos_rev = target_deg / 360.0;
                 cmd_vel_rev_s = target_vel_deg / 360.0;
                 motor_states[id].current_pos = cmd_pos_rev;
 
+                // ============================================================
+                // B. CÁLCULO DE DINÁMICA (NUEVO)
+                // ============================================================
+                
+                // 1. Determinar Masa y Fase
                 bool stance = memory.data->is_stance[row];
                 double mass_active = stance ? (TOTAL_ROBOT_MASS / 4.0) : LEG_MASS;
-                double fz_force = mass_active * (9.81 + memory.data->desired_accel[row][2]);
-                double fx_force = mass_active * memory.data->desired_accel[row][0];
-                double fy_force = mass_active * memory.data->desired_accel[row][1];
 
+                // 2. Obtener Aceleración Deseada (Debe venir del SharedData)
+                double ax = memory.data->desired_accel[row][0];
+                double ay = memory.data->desired_accel[row][1];
+                double az = memory.data->desired_accel[row][2];
+
+                // 3. Calcular Fuerzas Físicas (F = m * (a + g))
+                // Nota: Asumimos gravedad = 9.81 en Z positivo para compensarla
+                double fz_force = mass_active * (9.81 + az);
+                double fx_force = mass_active * ax;
+                double fy_force = mass_active * ay;
+
+                // 4. Obtener ángulos actuales de la pata para la Jacobiana (En Radianes)
                 double q1 = memory.data->angles[row][0] * (M_PI / 180.0);
                 double q2 = memory.data->angles[row][1] * (M_PI / 180.0);
                 double q3 = memory.data->angles[row][2] * (M_PI / 180.0);
 
-                LegTorques leg_tau = ComputeTorques(q1, q2, q3, fx_force, fy_force, fz_force, L1, L2, L3, (row==1||row==3));
+                // 5. Calcular Torques usando Jacobiana Transpuesta
+                bool is_right_leg = (row == 1 || row == 3); // 0=FL, 1=FR, 2=BL, 3=BR (Ajustar según tu mapa)
+                
+                LegTorques leg_tau = ComputeTorques(q1, q2, q3, fx_force, fy_force, fz_force, L1, L2, L3, is_right_leg);
+
+                // 6. Seleccionar torque para ESTE motor
                 if (col == 0) cmd_torque_nm = leg_tau.t1_abad;
                 else if (col == 1) cmd_torque_nm = leg_tau.t2_hip;
                 else if (col == 2) cmd_torque_nm = leg_tau.t3_knee;
+
+                // Opcional: Aplicar reducción de engranajes si existe
+                // cmd_torque_nm = cmd_torque_nm / GEAR_RATIO;
+
             } else {
+                // Modo Seguridad / Home
+                cmd_torque_nm = 0.0; // Sin FF en home
                 if (std::abs(motor_states[id].current_pos) > 0.0001) {
-                    double elap = std::chrono::duration<double>(std::chrono::steady_clock::now() - safety_home_start).count();
-                    cmd_pos_rev = CalculateMinimumJerk(elap, 2.0, motor_states[id].current_pos, 0.0);
+                    auto now_safety = std::chrono::steady_clock::now();
+                    double elapsed = std::chrono::duration<double>(now_safety - safety_home_start).count();
+                    cmd_pos_rev = CalculateMinimumJerk(elapsed, 2.0, motor_states[id].current_pos, 0.0);
+                    if (elapsed > 2.0) motor_states[id].current_pos = 0.0;
+                } else {
+                    cmd_pos_rev = 0.0;
                 }
+                cmd_vel_rev_s = 0.0;
             }
 
             moteus::PositionMode::Command cmd;
-            cmd.position = cmd_pos_rev; cmd.velocity = cmd_vel_rev_s;
-            cmd.feedforward_torque = cmd_torque_nm;
-            cmd.kp_scale = is_walking_mode ? memory.data->kp_scale[row][col] : 1.0;
-            cmd.kd_scale = is_walking_mode ? memory.data->kd_scale[row][col] : 1.0;
-            cmd.velocity_limit = cfg->vel_limit; cmd.maximum_torque = cfg->max_torque;
+            cmd.position = cmd_pos_rev;
+            cmd.velocity = cmd_vel_rev_s;
+            
+            // --- ENVÍO DE PARÁMETROS DINÁMICOS ---
+            cmd.feedforward_torque = cmd_torque_nm; 
+            
+            if (is_walking_mode) {
+                // Usar ganancias variables si están disponibles en SharedData
+                cmd.kp_scale = memory.data->kp_scale[row][col];
+                cmd.kd_scale = memory.data->kd_scale[row][col];
+            } else {
+                cmd.kp_scale = 1.0;
+                cmd.kd_scale = 1.0;
+            }
+
+            cmd.velocity_limit = cfg->vel_limit;
+            cmd.accel_limit = cfg->accel_limit;
+            cmd.maximum_torque = cfg->max_torque;
             
             send_frames.push_back(controllers[i]->MakePosition(cmd));
         }
 
-        SafeTransportCycle(transport, send_frames, &receive_frames);
+        SafeTransportCycle(transport, send_frames, nullptr);
 
-        // --- ANEXO PARSEO RETROALIMENTACIÓN DE one_leg_ver ---
-        for (const auto& rx : receive_frames) {
-            const auto res = moteus::Query::Parse(rx.data, rx.size);
-            global_telemetry.position[rx.source].store(res.position, std::memory_order_relaxed);
-            global_telemetry.velocity[rx.source].store(res.velocity, std::memory_order_relaxed);
-            global_telemetry.torque[rx.source].store(res.torque, std::memory_order_relaxed);
+        auto now = std::chrono::steady_clock::now();
+        if (now > next_cycle) {
+            next_cycle = now; 
+        } else {
+            std::this_thread::sleep_until(next_cycle);
         }
-
-        auto cycle_end = std::chrono::steady_clock::now();
-        global_telemetry.cycle_time_ms.store(std::chrono::duration<double, std::milli>(cycle_end - cycle_start).count(), std::memory_order_relaxed);
-
-        if (cycle_end < next_cycle) std::this_thread::sleep_until(next_cycle);
-        else next_cycle = cycle_end;
     }
 
-    if (monitor_thread.joinable()) monitor_thread.join();
     for (auto& c : controllers) c->SetStop();
     return 0;
 }

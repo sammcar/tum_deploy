@@ -38,9 +38,9 @@ struct MotorConfig {
 };
 
 // Configuración unificada
-const MotorConfig kCoxaConfig =  {.kp = 1.0, .kd = 1.0, .max_torque = 6.0, .vel_limit = 6.0, .accel_limit = 10.0};
-const MotorConfig kFemurConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 6.0, .vel_limit = 6.0, .accel_limit = 10.0};
-const MotorConfig kTibiaConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 6.0, .vel_limit = 6.0, .accel_limit = 10.0};
+const MotorConfig kCoxaConfig =  {.kp = 1.0, .kd = 1.0, .max_torque = 10.0, .vel_limit = 6.0, .accel_limit = 10.0};
+const MotorConfig kFemurConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 10.0, .vel_limit = 6.0, .accel_limit = 10.0};
+const MotorConfig kTibiaConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 10.0, .vel_limit = 6.0, .accel_limit = 10.0};
 
 const std::vector<int> kMotorIds = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
 
@@ -121,7 +121,8 @@ const MotorConfig* GetMotorConfig(int id) {
 
 double GetCalibratedTarget(int id, double target_deg) {
     double final_target = target_deg;
-    if (id == 3 || id == 6) final_target *= kFactorMultiplicador;
+    if (id == 6) final_target *= kFactorMultiplicador;
+    else if (id == 3) final_target *= 1.0;
     else if (id == 9 || id == 12) final_target *= kFactorMultiplicador2;
     return final_target;
 }

@@ -41,6 +41,9 @@ target_link_libraries(leg_test sam_libs moteus::cpp pi3hat fmt::fmt)
 add_executable(test pruebas.cpp)
 target_link_libraries(test sam_libs moteus::cpp pi3hat fmt::fmt)
 
+add_executable(torque pruebas_torque.cpp)
+target_link_libraries(torque sam_libs moteus::cpp pi3hat fmt::fmt)
+
 add_executable(move move_legs.cpp)
 target_link_libraries(move sam_libs moteus::cpp pi3hat fmt::fmt)
 
@@ -58,6 +61,42 @@ target_link_libraries(walk_v1
 add_executable(gait_v1 walk_sam.cpp)
 
 target_link_libraries(gait_v1
+    Eigen3::Eigen
+    rt
+    pthread
+)
+
+add_executable(walk_v2 walk_v2.cpp)
+target_link_libraries(walk_v2
+    Eigen3::Eigen
+    rt
+    pthread
+)
+
+add_executable(gait_v2 walk_sam_v2.cpp)
+
+target_link_libraries(gait_v2
+    Eigen3::Eigen
+    rt
+    pthread
+)
+
+add_executable(walk_v3 walk_v3.cpp)
+target_link_libraries(walk_v3
+    Eigen3::Eigen
+    rt
+    pthread
+)
+
+add_executable(cleaner memory_cleaner.cpp)
+target_link_libraries(cleaner
+    Eigen3::Eigen
+    rt
+    pthread
+)
+
+add_executable(single_torque torque_single_leg.cpp)
+target_link_libraries(single_torque
     Eigen3::Eigen
     rt
     pthread

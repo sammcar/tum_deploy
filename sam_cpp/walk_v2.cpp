@@ -33,53 +33,40 @@ void SignalHandler(int) { g_running = false; }
 const double L1 = 0.093, L2 = 0.147, L3 = 0.230;
 
 // ============================================================
-// 2. LÓGICA DE TRAYECTORIA CON LOWER BLEND (mjbots style)
+// 2. LÓGICA DE TRAYECTORIA TRIANGULAR CON DESACELERACIÓN
 // ============================================================
 
-PointXZ cubic_bezier(PointXZ p0, PointXZ p1, PointXZ p2, PointXZ p3, double t) {
-    double u = 1.0 - t, tt = t * t, uu = u * u, uuu = uu * u, ttt = tt * t;
-    return {
-        (uuu * p0.x) + (3 * uu * t * p1.x) + (3 * u * tt * p2.x) + (ttt * p3.x),
-        (uuu * p0.z) + (3 * uu * t * p1.z) + (3 * u * tt * p2.z) + (ttt * p3.z)
-    };
-}
-
 PointXZ get_trajectory_point(double phase, double x_ini, double step_len, double z_suelo, double h_paso) {
-    PointXZ P0 = {x_ini, z_suelo};
-    PointXZ P3 = {x_ini + step_len, z_suelo};
-    double h_ctrl = z_suelo + (4.0 / 3.0) * h_paso;
-    PointXZ P1 = {x_ini, h_ctrl};
-    PointXZ P2 = {x_ini + step_len, h_ctrl};
+    double x_mid = x_ini + (step_len / 2.0);
+    double x_final = x_ini + step_len;
+    double z_alto = z_suelo + h_paso;
 
-    // Parámetros de mezcla (Blending)
-    // world_blend: proporción del tiempo de vuelo usada para sincronizar velocidad
-    const double world_blend = 0.2; 
-    const double v_stance_x = (P0.x - P3.x) / 0.5; // Velocidad de arrastre en X
+    // Función de suavizado (S-curve) para esquinas
+    auto ease = [](double t) {
+        return (1.0 - cos(t * M_PI)) / 2.0;
+    };
 
     if (phase <= 0.5) {
-        // --- FASE VUELO ---
+        // --- FASE VUELO (SWING) ---
+        // Normalizamos la fase de vuelo de 0.0 a 1.0
         double t_vuelo = phase / 0.5;
 
-        // Implementación de Lower Blend: Sincronizar velocidad antes del contacto
-        if (t_vuelo > (1.0 - world_blend)) {
-            double t_blend_start = 1.0 - world_blend;
-            PointXZ p_start_blend = cubic_bezier(P0, P1, P2, P3, t_blend_start);
-            
-            // Proporción interna del blend (0.0 a 1.0)
-            double t_inside = (t_vuelo - t_blend_start) / world_blend;
-            
-            // X: Transiciona de la curva a la velocidad de avance del cuerpo
-            double x = p_start_blend.x + (v_stance_x * t_inside * (world_blend * 0.5));
-            // Z: Termina el descenso suavemente hasta el suelo
-            double z = p_start_blend.z + (z_suelo - p_start_blend.z) * t_inside;
-            
-            return { x, z };
+        if (t_vuelo < 0.5) {
+            // 1. SUBIDA DIAGONAL (de inicio a punto más alto)
+            double t = ease(t_vuelo / 0.5);
+            return { x_ini + (x_mid - x_ini) * t, z_suelo + (h_paso * t) };
+        } 
+        else {
+            // 2. BAJADA DIAGONAL (de punto más alto a contacto final)
+            double t = ease((t_vuelo - 0.5) / 0.5);
+            return { x_mid + (x_final - x_mid) * t, z_alto - (h_paso * t) };
         }
-        return cubic_bezier(P0, P1, P2, P3, t_vuelo);
     } else {
-        // --- FASE APOYO (Lineal puro) ---
+        // --- FASE APOYO (STANCE) ---
+        // 3. RETROCESO LINEAL (por el suelo)
         double t_stance = (phase - 0.5) / 0.5;
-        return { P3.x + (P0.x - P3.x) * t_stance, z_suelo };
+        double t = ease(t_stance); 
+        return { x_final + (x_ini - x_final) * t, z_suelo };
     }
 }
 
@@ -161,7 +148,7 @@ int main() {
     }
 
     // --- FASE B: BUCLE DINÁMICO ---
-    std::cout << ">> Iniciando caminata suave..." << std::endl;
+    std::cout << ">> Iniciando caminata TRIANGULAR SUAVE..." << std::endl;
     auto start_time = std::chrono::steady_clock::now();
     double loop_dt = 0.005; // 200 Hz
     double lookahead = 0.001;
@@ -183,9 +170,10 @@ int main() {
         LegAngles ik_next = solve_IK(p_next.x / 1000.0, L1, p_next.z / 1000.0, false);
 
         if (ik_curr.valid && ik_next.valid) {
-            for(int j=0; j<3; ++j) {
-                shm_ptr->angles[0][j] = (j==0)?ik_curr.th1:(j==1)?ik_curr.th2:ik_curr.th3;
-            }
+            shm_ptr->angles[0][0] = ik_curr.th1;
+            shm_ptr->angles[0][1] = ik_curr.th2;
+            shm_ptr->angles[0][2] = ik_curr.th3;
+            
             shm_ptr->velocities[0][0] = (ik_next.th1 - ik_curr.th1) / lookahead;
             shm_ptr->velocities[0][1] = (ik_next.th2 - ik_curr.th2) / lookahead;
             shm_ptr->velocities[0][2] = (ik_next.th3 - ik_curr.th3) / lookahead;

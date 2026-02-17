@@ -5,7 +5,7 @@ import os
 import time
 
 # ================= CONFIGURACIÓN =================
-UDP_IP = "0.0.0.0" 
+UDP_IP = "192.168.120.114"
 UDP_PORT = 5005
 SHM_NAME = "/dev/shm/rex_shm" 
 
