@@ -14,6 +14,11 @@
 #include <limits>
 #include <map>
 #include <string>
+#include <Eigen/Dense>
+
+using Eigen::Vector3d;
+using Eigen::Matrix3d;
+using Eigen::AngleAxisd;
 
 // ============================================================
 // 1. ESTRUCTURA DE MEMORIA COMPARTIDA
@@ -29,12 +34,6 @@ struct SharedData {
     bool is_walking;      
 };
 //#pragma pack(pop)
-
-// Estructura vectorial simple
-struct Vector3d {
-    double x, y, z;
-    Vector3d(double _x=0, double _y=0, double _z=0) : x(_x), y(_y), z(_z) {}
-};
 
 struct LegAngles { double th1, th2, th3; bool valid; };
 
@@ -53,14 +52,27 @@ void SignalHandler(int) { g_running = false; }
 const double L1 = 0.093;
 const double L2 = 0.147;
 const double L3 = 0.230;
+const double L_BODY = 0.375; // Largo total
+const double W_BODY = 0.200; // Ancho total
 
-// Mapeo de IDs a Nombres para usar tu mapa
-// 0: FL, 1: FR, 2: BL, 3: BR
+// Distancia del Centro Geométrico a los hombros (Hips)
+const double DX = L_BODY / 2.0;
+const double DY = W_BODY / 2.0;
+
+// Posición de cada cadera respecto al centro del robot (0,0,0)
+// Orden: 0:FL, 1:FR, 2:BL, 3:BR
+const Vector3d HIP_OFFSETS[4] = {
+    Vector3d( DX,  DY, 0.0), // FL
+    Vector3d( DX, -DY, 0.0), // FR
+    Vector3d(-DX,  DY, 0.0), // BL
+    Vector3d(-DX, -DY, 0.0)  // BR
+};
+
 Vector3d LEGS_STAND_XYZ[4] = {
-    { 0.01,   0.103, -0.296}, // 0: FL
-    { 0.01,  -0.093, -0.296}, // 1: FR
-    {-0.028,  0.103, -0.296}, // 2: BL
-    {-0.028, -0.093, -0.296}  // 3: BR
+    Vector3d( 0.01,   0.103, -0.296), // 0: FL
+    Vector3d( 0.01,  -0.093, -0.296), // 1: FR
+    Vector3d(-0.028,  0.103, -0.296), // 2: BL
+    Vector3d(-0.028, -0.093, -0.296)  // 3: BR
 };
 
 // Vector3d LEGS_STAND_XYZ[4] = { // Original
@@ -73,6 +85,24 @@ Vector3d LEGS_STAND_XYZ[4] = {
 // ============================================================
 // 3. MATEMÁTICAS (IK + BÉZIER)
 // ============================================================
+
+
+Vector3d ComputeWholeBodyIK(Vector3d foot_pos_local_flat, int leg_idx, 
+                            Vector3d body_pos, Vector3d body_rpy) {
+    
+    Matrix3d R_body;
+    R_body = AngleAxisd(body_rpy.z(), Vector3d::UnitZ()) *
+             AngleAxisd(body_rpy.y(), Vector3d::UnitY()) *
+             AngleAxisd(body_rpy.x(), Vector3d::UnitX());
+
+    Vector3d hip_offset_static = HIP_OFFSETS[leg_idx];
+    Vector3d foot_pos_global = hip_offset_static + foot_pos_local_flat;
+    Vector3d hip_pos_new = body_pos + (R_body * hip_offset_static);
+    Vector3d vec_world = foot_pos_global - hip_pos_new;
+    Vector3d vec_local_ik = R_body.transpose() * vec_world;
+
+    return vec_local_ik;
+}
 
 // Utilidad para envolver ángulos (-PI a PI)
 double wrap_to_pi(double angle) {
@@ -238,7 +268,7 @@ void write_to_shm(SharedData* shm, int leg_idx,
 int main() {
     std::signal(SIGINT, SignalHandler);
 
-    // --- INPUT DATOS ---
+    // --- 1. INPUT DATOS BÁSICOS (Marcha) ---
     int max_ciclos = pedir_dato<int>("Ciclos totales (ej. 20)");
     double step_duration = pedir_dato<double>("Periodo paso (s) (ej. 0.4)"); 
     double step_len = pedir_dato<double>("Largo paso (mm) (ej. 80)");
@@ -261,27 +291,30 @@ int main() {
     std::cout << "\n[INFO] Usando STAND_XYZ como origen." << std::endl;
 
     // --- CONFIGURACIÓN DE GAIT (Trote) ---
-    double gait_offsets[4] = {0.0, 0.5, 0.5, 0.0}; 
+    double gait_offsets[4] = {0.0, 0.5, 0.5, 0.0};
+    Vector3d start_foot_positions[4]; 
 
     // ============================================================
-    // FASE A: ALINEACIÓN SUAVE
+    // FASE A: ALINEACIÓN SUAVE (A postura Neutra)
     // ============================================================
-    std::cout << ">> Alineando suavemente a posición de inicio..." << std::endl;
+    std::cout << ">> Alineando suavemente a posición de inicio (Neutra)..." << std::endl;
     
     double align_duration = 3.0; 
     double align_dt = 0.01;      
     int align_steps = align_duration / align_dt;
 
     LegAngles start_angles[4];
+    // Calculamos ángulos neutros (Sin offsets de cuerpo aún)
     for(int p=0; p<4; ++p) {
         bool is_right = (p == 1 || p == 3);
         Vector3d origin = LEGS_STAND_XYZ[p];
         double start_phase = fmod(0.0 + gait_offsets[p], 1.0);
-        // Calculamos posición inicial exacta
-        TrajectoryPoint pt = get_step_trajectory(start_phase, step_duration, origin.x, origin.z, step_len, step_h);
-        start_angles[p] = solve_IK(pt.x, origin.y, pt.z, is_right);
+        TrajectoryPoint pt = get_step_trajectory(start_phase, step_duration, origin.x(), origin.z(), step_len, step_h);
+        start_foot_positions[p] = Vector3d(pt.x, origin.y(), pt.z);
+        start_angles[p] = solve_IK(pt.x, origin.y(), pt.z, is_right);
     }
 
+    // Ejecutar alineación neutra
     for (int i = 1; i <= align_steps && g_running; ++i) {
         double t_lin = (double)i / align_steps; 
         double t_smooth = (1.0 - std::cos(t_lin * M_PI)) / 2.0;
@@ -291,10 +324,10 @@ int main() {
                 shm_ptr->angles[p][0] = start_angles[p].th1 * t_smooth;
                 shm_ptr->angles[p][1] = start_angles[p].th2 * t_smooth;
                 shm_ptr->angles[p][2] = start_angles[p].th3 * t_smooth;
-                // Velocidad estimada para que el feedforward no se vuelva loco
-                shm_ptr->velocities[p][0] = (start_angles[p].th1 / align_duration) * 1.5;
-                shm_ptr->velocities[p][1] = (start_angles[p].th2 / align_duration) * 1.5;
-                shm_ptr->velocities[p][2] = (start_angles[p].th3 / align_duration) * 1.5;
+                // Velocidad suave para inicio
+                shm_ptr->velocities[p][0] = (start_angles[p].th1 / align_duration);
+                shm_ptr->velocities[p][1] = (start_angles[p].th2 / align_duration);
+                shm_ptr->velocities[p][2] = (start_angles[p].th3 / align_duration);
                 shm_ptr->desired_accel[p][0] = 0; shm_ptr->desired_accel[p][1] = 0; shm_ptr->desired_accel[p][2] = 0;
                 shm_ptr->kp_scale[p][0] = 1.0; shm_ptr->kd_scale[p][0] = 1.0;
                 shm_ptr->kp_scale[p][1] = 1.0; shm_ptr->kd_scale[p][1] = 1.0;
@@ -307,10 +340,10 @@ int main() {
     }
 
     // ============================================================
-    // FASE B: HOLD DE ESPERA
+    // FASE B: CONFIGURACIÓN Y APLICACIÓN DE POSTURA (ESTÁTICA)
     // ============================================================
-    std::cout << ">> Alineación completa. MANTENIENDO POSICIÓN." << std::endl;
-    
+    std::cout << "\n>> Alineación base completada. Manteniendo posición neutra." << std::endl;
+
     // Fijamos valores finales exactos
     for(int p=0; p<4; ++p) {
         if (start_angles[p].valid) {
@@ -323,31 +356,100 @@ int main() {
         shm_ptr->is_stance[p] = true;
     }
 
-    std::cout << "\n>>> PRESIONA ENTER PARA INICIAR LA MARCHA <<<" << std::endl;
-    // Limpieza de buffer robusta
-    std::cin.clear(); 
-    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+    std::cout << "========================================" << std::endl;
+    std::cout << "   CONFIGURACIÓN DE POSTURA CORPORAL    " << std::endl;
+    std::cout << "========================================" << std::endl;
+
+    double in_bx = pedir_dato<double>("Offset Cuerpo X (mm) [Adelante+]");
+    double in_by = pedir_dato<double>("Offset Cuerpo Y (mm) [Izq+]");
+    double in_bz = pedir_dato<double>("Offset Cuerpo Z (mm) [Abajo-]"); 
+    
+    double in_roll  = pedir_dato<double>("Roll (grados)");
+    double in_pitch = pedir_dato<double>("Pitch (grados) [Nariz Abajo+]");
+    double in_yaw   = pedir_dato<double>("Yaw (grados)");
+
+    // Objetivos finales de postura
+    Vector3d target_body_pos(in_bx / 1000.0, in_by / 1000.0, in_bz / 1000.0);
+    Vector3d target_body_rpy(in_roll * M_PI / 180.0, in_pitch * M_PI / 180.0, in_yaw * M_PI / 180.0);
+
+    std::cout << "\n>>> PRESIONA ENTER PARA APLICAR POSTURA (SIN CAMINAR) <<<" << std::endl;
     std::cin.get(); 
 
+    std::cout << ">> Aplicando postura corporal..." << std::endl;
+
+    // --- TRANSICIÓN SUAVE A LA POSTURA MODIFICADA (Implementada) ---
+    // Se utiliza la misma lógica de suavizado (coseno) que en la Fase A
+    double posture_duration = 2.0; // 2 segundos para acomodarse
+    double posture_dt = 0.01;      // Paso de tiempo
+    int posture_steps = posture_duration / posture_dt;
+
+    for (int i = 1; i <= posture_steps && g_running; ++i) {
+        double t_lin = (double)i / posture_steps;
+        // Curva 'S' suave: (1 - cos(pi*t)) / 2
+        double t_smooth = (1.0 - std::cos(t_lin * M_PI)) / 2.0;
+
+        // Interpolamos desde 0 (neutro) hasta el objetivo
+        Vector3d curr_pos = target_body_pos * t_smooth;
+        Vector3d curr_rpy = target_body_rpy * t_smooth;
+
+        for(int p=0; p<4; ++p) {
+            bool is_right = (p == 1 || p == 3);
+            
+            // Usamos la posición base STAND, sin fase de marcha
+            Vector3d foot_flat = start_foot_positions[p]; 
+            
+            // Calculamos IK con el cuerpo rotado/trasladado actual
+            Vector3d ik_input = ComputeWholeBodyIK(foot_flat, p, curr_pos, curr_rpy);
+            LegAngles ik = solve_IK(ik_input.x(), ik_input.y(), ik_input.z(), is_right);
+
+            if (ik.valid) {
+                shm_ptr->angles[p][0] = ik.th1;
+                shm_ptr->angles[p][1] = ik.th2;
+                shm_ptr->angles[p][2] = ik.th3;
+                // Velocidad baja para transición suave
+                shm_ptr->velocities[p][0] = 0.0; 
+                shm_ptr->velocities[p][1] = 0.0;
+                shm_ptr->velocities[p][2] = 0.0;
+                shm_ptr->is_stance[p] = true;
+            }
+        }
+        shm_ptr->is_walking = true; // Mantener watchdog activo si existe
+        std::this_thread::sleep_for(std::chrono::milliseconds((int)(posture_dt * 1000)));
+    }
+
+    for(int p=0; p<4; ++p) {
+        bool is_right = (p == 1 || p == 3);
+        Vector3d foot_flat = start_foot_positions[p];
+        Vector3d ik_input = ComputeWholeBodyIK(foot_flat, p, target_body_pos, target_body_rpy);
+        LegAngles ik = solve_IK(ik_input.x(), ik_input.y(), ik_input.z(), is_right);
+        if(ik.valid) {
+             shm_ptr->angles[p][0] = ik.th1;
+             shm_ptr->angles[p][1] = ik.th2;
+             shm_ptr->angles[p][2] = ik.th3;
+        }
+    }
+
+    std::cout << ">> Postura aplicada. MANTENIENDO POSICIÓN..." << std::endl;
+    std::cout << "\n>>> PRESIONA ENTER PARA INICIAR MARCHA <<<" << std::endl;
+    std::cin.get(); // Espera al usuario
     std::cout << ">> Iniciando marcha..." << std::endl;
 
     // ============================================================
-    // FASE C: BUCLE DINÁMICO (Trote + Aterrizaje Controlado)
+    // FASE C: BUCLE DINÁMICO (Trote + Postura Mantenida)
     // ============================================================
     auto start_time = std::chrono::steady_clock::now();
     double loop_dt = 0.004;
     double prev_angles[4][3] = {0}; 
     
+    // Inicializamos prev_angles con lo que tenemos en SHM (la postura ya aplicada)
     for(int p=0; p<4; ++p) {
-        prev_angles[p][0] = start_angles[p].th1;
-        prev_angles[p][1] = start_angles[p].th2;
-        prev_angles[p][2] = start_angles[p].th3;
+        prev_angles[p][0] = shm_ptr->angles[p][0];
+        prev_angles[p][1] = shm_ptr->angles[p][1];
+        prev_angles[p][2] = shm_ptr->angles[p][2];
     }
     bool first_run = true;
-
-    // Variables para el control de aterrizaje final
-    bool leg_finished[4] = {false, false, false, false}; // Si ya aterrizó y se bloqueó
-    TrajectoryPoint final_points[4]; // Guardamos la coordenada exacta donde aterrizó
+    bool leg_finished[4] = {false, false, false, false};
+    Vector3d final_foot_pos_3d[4];
 
     while (g_running) {
         auto t_now = std::chrono::steady_clock::now();
@@ -355,62 +457,59 @@ int main() {
         
         bool tiempo_agotado = (elapsed > (max_ciclos * step_duration));
         bool todo_aterrizado = true; 
-
         double global_phase = fmod(elapsed / step_duration, 1.0);
 
         for (int p = 0; p < 4; p++) {
             bool is_right = (p == 1 || p == 3);
             
-            // Si la pata ya terminó, usamos su punto congelado y no calculamos nada más
+            // --- Si la pata ya terminó (HOLD FINAL) ---
             if (leg_finished[p]) {
-                shm_ptr->desired_accel[p][0] = 0.0; shm_ptr->desired_accel[p][1] = 0.0; shm_ptr->desired_accel[p][2] = 0.0;
+                shm_ptr->desired_accel[p][0] = 0; shm_ptr->desired_accel[p][1] = 0; shm_ptr->desired_accel[p][2] = 0;
                 shm_ptr->is_stance[p] = true;
                 
-                // Calculamos IK para el punto congelado (para mantener posición estricta)
-                LegAngles ik = solve_IK(final_points[p].x, LEGS_STAND_XYZ[p].y, final_points[p].z, is_right);
+                // MANTENEMOS LA POSTURA MODIFICADA EN EL HOLD
+                Vector3d final_ik_input = ComputeWholeBodyIK(final_foot_pos_3d[p], p, target_body_pos, target_body_rpy);
+                
+                LegAngles ik = solve_IK(final_ik_input.x(), final_ik_input.y(), final_ik_input.z(), is_right);
+                
                 if (ik.valid) {
                     shm_ptr->angles[p][0] = ik.th1;
                     shm_ptr->angles[p][1] = ik.th2;
                     shm_ptr->angles[p][2] = ik.th3;
                     shm_ptr->velocities[p][0] = 0.0; shm_ptr->velocities[p][1] = 0.0; shm_ptr->velocities[p][2] = 0.0;
                 }
-                // Ganancias al máximo para sostener
+                // Alta rigidez para mantener postura
                 shm_ptr->kp_scale[p][0] = 1.0; shm_ptr->kd_scale[p][0] = 1.0;
                 shm_ptr->kp_scale[p][1] = 1.0; shm_ptr->kd_scale[p][1] = 1.0;
                 shm_ptr->kp_scale[p][2] = 1.0; shm_ptr->kd_scale[p][2] = 1.0;
                 
-                continue; // Pasamos a la siguiente pata
+                continue; 
             }
 
-            // Si no ha terminado, calculamos normal
+            // --- Trayectoria Normal ---
             double leg_phase = fmod(global_phase + gait_offsets[p], 1.0);
             bool stance = (leg_phase >= 0.5);
-            
             Vector3d origin = LEGS_STAND_XYZ[p];
-            TrajectoryPoint point = get_step_trajectory(leg_phase, step_duration, origin.x, origin.z, step_len, step_h);
+            TrajectoryPoint point = get_step_trajectory(leg_phase, step_duration, origin.x(), origin.z(), step_len, step_h);
 
-            // LOGICA DE TRANSICIÓN A FINAL
+            // --- Chequeo de fin de ciclo ---
             if (tiempo_agotado) {
                 if (stance) {
-                    // ¡ATERRIZAJE DETECTADO!
-                    // Guardamos la posición ACTUAL como la posición final.
-                    final_points[p] = point; // Guardamos X, Z actuales
-                    final_points[p].vx = 0; final_points[p].vz = 0;
-                    
-                    leg_finished[p] = true; // Marcamos para no volver a calcular
-                    
-                    // Configuramos inmediata rigidez
+                    final_foot_pos_3d[p] = Vector3d(point.x, origin.y(), point.z);
+                    leg_finished[p] = true; 
                     shm_ptr->is_stance[p] = true;
-                    // Saltamos al siguiente ciclo para que el bloque 'if(leg_finished)' tome el control
                     continue; 
                 } else {
-                    // Sigue volando, permitimos que continúe su trayectoria
                     todo_aterrizado = false;
                 }
             }
 
-            // Ejecución Normal (Marcha o Vuelo Final)
-            LegAngles ik = solve_IK(point.x, origin.y, point.z, is_right);
+            // --- APLICACIÓN DINÁMICA DE POSTURA ---
+            Vector3d foot_local_flat(point.x, origin.y(), point.z);
+            
+            // Aquí usamos target_body_pos/rpy que ya definimos arriba
+            Vector3d ik_input = ComputeWholeBodyIK(foot_local_flat, p, target_body_pos, target_body_rpy);
+            LegAngles ik = solve_IK(ik_input.x(), ik_input.y(), ik_input.z(), is_right);
 
             if (ik.valid) {
                 shm_ptr->angles[p][0] = ik.th1;
@@ -427,17 +526,14 @@ int main() {
                 shm_ptr->desired_accel[p][0] = point.ax;
                 shm_ptr->desired_accel[p][1] = 0.0;
                 shm_ptr->desired_accel[p][2] = point.az;
-
                 shm_ptr->is_stance[p] = stance;
 
-                if (stance) {
-                    shm_ptr->kp_scale[p][0] = 1.0; shm_ptr->kd_scale[p][0] = 1.0;
-                    shm_ptr->kp_scale[p][1] = 1.0; shm_ptr->kd_scale[p][1] = 1.0;
-                    shm_ptr->kp_scale[p][2] = 1.0; shm_ptr->kd_scale[p][2] = 1.0;
-                } else {
-                    shm_ptr->kp_scale[p][0] = 0.6; shm_ptr->kd_scale[p][0] = 0.4;
-                    shm_ptr->kp_scale[p][1] = 0.6; shm_ptr->kd_scale[p][1] = 0.4;
-                    shm_ptr->kp_scale[p][2] = 0.6; shm_ptr->kd_scale[p][2] = 0.4;
+                // Ajuste de ganancias según fase
+                double kp_val = stance ? 1.0 : 0.6;
+                double kd_val = stance ? 1.0 : 0.4;
+                for(int m=0; m<3; ++m) {
+                    shm_ptr->kp_scale[p][m] = kp_val;
+                    shm_ptr->kd_scale[p][m] = kd_val;
                 }
             }
         }
@@ -445,21 +541,20 @@ int main() {
         if (tiempo_agotado && todo_aterrizado) {
             break;
         }
-
         first_run = false;
         shm_ptr->is_walking = true;
         std::this_thread::sleep_until(t_now + std::chrono::duration<double>(loop_dt));
     }
 
     // ============================================================
-    // FASE D: HOLD FINAL (Post-Caminata)
+    // FASE D: HOLD FINAL (Post-Caminata con Postura)
     // ============================================================
     std::cout << "\n>> Ciclo terminado. Todas las patas aterrizadas." << std::endl;
-    std::cout << ">> MANTENIENDO POSICIÓN FINAL." << std::endl;
+    std::cout << ">> MANTENIENDO POSTURA FINAL." << std::endl;
     std::cout << ">>> PRESIONA ENTER PARA FINALIZAR Y APAGAR <<<" << std::endl;
     
-    // Importante: No re-limpiamos buffer aquí porque el flujo ha sido automático.
-    // Solo esperamos el input del usuario.
+    // Aquí el robot se queda congelado enviando el último comando del bucle while
+    // que ya incluye la postura modificada.
     std::cin.get(); 
 
     std::memset(shm_ptr, 0, sizeof(SharedData));

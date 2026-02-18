@@ -22,11 +22,11 @@ struct MotorConfig {
     double vel_limit; double accel_limit;
 };
 
-const MotorConfig kCoxaConfig  = {1.0, 1.0, 2.0, 20.0, 50.0};
-const MotorConfig kFemurConfig = {1.0, 1.0, 2.0, 20.0, 50.0};
-const MotorConfig kTibiaConfig = {1.0, 1.0, 2.0, 20.0, 50.0};
+const MotorConfig kCoxaConfig  = {1.0, 1.0, 7.0, 20.0, 50.0};
+const MotorConfig kFemurConfig = {1.0, 1.0, 7.0, 20.0, 50.0};
+const MotorConfig kTibiaConfig = {1.0, 1.0, 7.0, 20.0, 50.0};
 
-const std::vector<int> kMotorIds = {1, 2, 3}; //, 4, 5... agregar resto
+const std::vector<int> kMotorIds = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}; //, 4, 5... agregar resto
 
 // Helper para obtener config según ID
 inline const MotorConfig* GetMotorConfig(int id) {

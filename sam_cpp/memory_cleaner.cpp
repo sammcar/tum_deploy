@@ -21,7 +21,7 @@ struct SharedData {
 #pragma pack(pop)
 
 int main() {
-    const char* shm_name = "/rex_shm";
+    const char* shm_name = "/rex_tel";
 
     // 1. Abrir la memoria compartida existente
     // No usamos O_CREAT porque solo queremos limpiar si ya existe.
@@ -60,7 +60,7 @@ int main() {
     munmap(shm_ptr, sizeof(SharedData));
     close(shm_fd);
 
-    std::cout << "✅ Memoria '/rex_shm' reseteada a CERO con éxito." << std::endl;
+    std::cout << "✅ Memoria reseteada a CERO con éxito." << std::endl;
     std::cout << "   El robot es seguro para iniciar." << std::endl;
 
     return 0;

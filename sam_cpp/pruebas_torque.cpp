@@ -81,7 +81,7 @@ void SignalHandler(int) { g_running = false; }
 //    AJUSTES MECÁNICOS
 // ============================================================
 const double kFactorMultiplicador = 1.00;
-const double kFactorMultiplicador2 = 0.56;
+const double kFactorMultiplicador2 = 1.00;
 
 struct MotorConfig {
     double kp;
@@ -92,11 +92,11 @@ struct MotorConfig {
 };
 
 // Configuración sugerida para dinámica (KP más bajos, Torque alto disponible)
-const MotorConfig kCoxaConfig =  {.kp = 1.0, .kd = 1.0, .max_torque = 2.0, .vel_limit = 20.0, .accel_limit = 50.0};
-const MotorConfig kFemurConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 2.0, .vel_limit = 20.0, .accel_limit = 50.0};
-const MotorConfig kTibiaConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 2.0, .vel_limit = 20.0, .accel_limit = 50.0};
+const MotorConfig kCoxaConfig =  {.kp = 1.0, .kd = 1.0, .max_torque = 4.0, .vel_limit = 20.0, .accel_limit = 50.0};
+const MotorConfig kFemurConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 4.0, .vel_limit = 20.0, .accel_limit = 50.0};
+const MotorConfig kTibiaConfig = {.kp = 1.0, .kd = 1.0, .max_torque = 4.0, .vel_limit = 20.0, .accel_limit = 50.0};
 
-const std::vector<int> kMotorIds = {10, 11, 12};
+const std::vector<int> kMotorIds = {1, 2, 3};
 
 // ============================================================
 //    MEMORIA COMPARTIDA (MODIFICADA)

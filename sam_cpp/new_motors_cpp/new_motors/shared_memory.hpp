@@ -14,6 +14,7 @@ struct CommandData
     double desired_accel[4][3];
     double kp_scale[4][3];
     double kd_scale[4][3];
+    double transition_time;
     bool is_stance[4];
     bool is_walking;
 
