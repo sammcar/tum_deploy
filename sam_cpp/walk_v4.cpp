@@ -24,14 +24,15 @@ using Eigen::AngleAxisd;
 // 1. ESTRUCTURA DE MEMORIA COMPARTIDA
 // ============================================================
 //#pragma pack(push, 1)
-struct SharedData {
+struct CommandData {
     double angles[4][3];        // [Pata][Motor]
-    double velocities[4][3];    
+    double velocities[4][3];    // Se usa como LÍMITE DE VELOCIDAD en modo estático
     double desired_accel[4][3]; // [X, Y, Z] Feedforward
     double kp_scale[4][3];      
-    double kd_scale[4][3];      
+    double kd_scale[4][3];
+    double transition_time;     // NUEVO: Tiempo para interpolación en main_sebas
     bool is_stance[4];          
-    bool is_walking;      
+    bool is_walking;            // false = modo estático interpolado
 };
 //#pragma pack(pop)
 
@@ -226,42 +227,6 @@ T pedir_dato(std::string mensaje) {
     return valor;
 }
 
-// Función auxiliar para escribir en memoria de forma limpia
-void write_to_shm(SharedData* shm, int leg_idx, 
-                  const LegAngles& angles, 
-                  const TrajectoryPoint& point, // Para aceleración
-                  double vel_th1, double vel_th2, double vel_th3, // Velocidades
-                  bool is_stance, 
-                  double kp = 1.0, double kd = 1.0) 
-{
-    if (!shm) return;
-
-    // 1. Ángulos
-    if (angles.valid) {
-        shm->angles[leg_idx][0] = angles.th1;
-        shm->angles[leg_idx][1] = angles.th2;
-        shm->angles[leg_idx][2] = angles.th3;
-    }
-
-    // 2. Velocidades
-    shm->velocities[leg_idx][0] = vel_th1;
-    shm->velocities[leg_idx][1] = vel_th2;
-    shm->velocities[leg_idx][2] = vel_th3;
-
-    // 3. Aceleración (Feedforward)
-    shm->desired_accel[leg_idx][0] = point.ax;
-    shm->desired_accel[leg_idx][1] = 0.0; // Asumimos 0 en Y por ahora
-    shm->desired_accel[leg_idx][2] = point.az;
-
-    // 4. Estado y Ganancias
-    shm->is_stance[leg_idx] = is_stance;
-    
-    for(int m=0; m<3; ++m) {
-        shm->kp_scale[leg_idx][m] = kp;
-        shm->kd_scale[leg_idx][m] = kd;
-    }
-}
-
 // ============================================================
 // 4. MAIN CORREGIDO (Aterrizaje Suave + Bloqueo Real)
 // ============================================================
@@ -280,8 +245,8 @@ int main() {
 
     const char* shm_name = "/rex_cmd";
     int shm_fd = shm_open(shm_name, O_CREAT | O_RDWR, 0666);
-    ftruncate(shm_fd, sizeof(SharedData));
-    SharedData* shm_ptr = static_cast<SharedData*>(mmap(0, sizeof(SharedData), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0));
+    ftruncate(shm_fd, sizeof(CommandData));
+    CommandData* shm_ptr = static_cast<CommandData*>(mmap(0, sizeof(CommandData), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0));
 
     if (shm_ptr == MAP_FAILED) {
         std::cerr << "Error accediendo a memoria compartida" << std::endl;
@@ -299,12 +264,13 @@ int main() {
     // ============================================================
     std::cout << ">> Alineando suavemente a posición de inicio (Neutra)..." << std::endl;
     
-    double align_duration = 3.0; 
-    double align_dt = 0.01;      
-    int align_steps = align_duration / align_dt;
+    double align_duration = 3.0;     
 
     LegAngles start_angles[4];
     // Calculamos ángulos neutros (Sin offsets de cuerpo aún)
+    std::cout << ">> Enviando comando de alineación inicial (3.0s)..." << std::endl;
+    
+    // 1. Calcular ángulos neutros
     for(int p=0; p<4; ++p) {
         bool is_right = (p == 1 || p == 3);
         Vector3d origin = LEGS_STAND_XYZ[p];
@@ -314,30 +280,34 @@ int main() {
         start_angles[p] = solve_IK(pt.x, origin.y(), pt.z, is_right);
     }
 
-    // Ejecutar alineación neutra
-    for (int i = 1; i <= align_steps && g_running; ++i) {
-        double t_lin = (double)i / align_steps; 
-        double t_smooth = (1.0 - std::cos(t_lin * M_PI)) / 2.0;
-
+    // 2. Escribir en SHM (UNA SOLA VEZ)
+    if (shm_ptr) {
         for(int p=0; p<4; ++p) {
             if (start_angles[p].valid) {
-                shm_ptr->angles[p][0] = start_angles[p].th1 * t_smooth;
-                shm_ptr->angles[p][1] = start_angles[p].th2 * t_smooth;
-                shm_ptr->angles[p][2] = start_angles[p].th3 * t_smooth;
-                // Velocidad suave para inicio
-                shm_ptr->velocities[p][0] = (start_angles[p].th1 / align_duration);
-                shm_ptr->velocities[p][1] = (start_angles[p].th2 / align_duration);
-                shm_ptr->velocities[p][2] = (start_angles[p].th3 / align_duration);
-                shm_ptr->desired_accel[p][0] = 0; shm_ptr->desired_accel[p][1] = 0; shm_ptr->desired_accel[p][2] = 0;
+                shm_ptr->angles[p][0] = start_angles[p].th1;
+                shm_ptr->angles[p][1] = start_angles[p].th2;
+                shm_ptr->angles[p][2] = start_angles[p].th3;
+                
+                // Configuración para modo estático en main_sebas:
                 shm_ptr->kp_scale[p][0] = 1.0; shm_ptr->kd_scale[p][0] = 1.0;
                 shm_ptr->kp_scale[p][1] = 1.0; shm_ptr->kd_scale[p][1] = 1.0;
                 shm_ptr->kp_scale[p][2] = 1.0; shm_ptr->kd_scale[p][2] = 1.0;
-                shm_ptr->is_stance[p] = true; 
+                
+                // Velocidad límite (importante para que no se mueva lento artificialmente)
+                shm_ptr->velocities[p][0] = 5.0; 
+                shm_ptr->velocities[p][1] = 5.0; 
+                shm_ptr->velocities[p][2] = 5.0;
+                
+                shm_ptr->is_stance[p] = true;
             }
         }
-        shm_ptr->is_walking = true;
-        std::this_thread::sleep_for(std::chrono::milliseconds((int)(align_dt * 1000)));
+        shm_ptr->transition_time = align_duration; // main_sebas usará esto para interpolar
+        shm_ptr->is_walking = false;    // Activa el modo interpolación estática
     }
+
+    // 3. Esperar a que el robot termine el movimiento físico
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    std::cout << ">> Alineación completada." << std::endl;
 
     // ============================================================
     // FASE B: CONFIGURACIÓN Y APLICACIÓN DE POSTURA (ESTÁTICA)
@@ -383,53 +353,37 @@ int main() {
     double posture_dt = 0.01;      // Paso de tiempo
     int posture_steps = posture_duration / posture_dt;
 
-    for (int i = 1; i <= posture_steps && g_running; ++i) {
-        double t_lin = (double)i / posture_steps;
-        // Curva 'S' suave: (1 - cos(pi*t)) / 2
-        double t_smooth = (1.0 - std::cos(t_lin * M_PI)) / 2.0;
-
-        // Interpolamos desde 0 (neutro) hasta el objetivo
-        Vector3d curr_pos = target_body_pos * t_smooth;
-        Vector3d curr_rpy = target_body_rpy * t_smooth;
-
-        for(int p=0; p<4; ++p) {
-            bool is_right = (p == 1 || p == 3);
-            
-            // Usamos la posición base STAND, sin fase de marcha
-            Vector3d foot_flat = start_foot_positions[p]; 
-            
-            // Calculamos IK con el cuerpo rotado/trasladado actual
-            Vector3d ik_input = ComputeWholeBodyIK(foot_flat, p, curr_pos, curr_rpy);
-            LegAngles ik = solve_IK(ik_input.x(), ik_input.y(), ik_input.z(), is_right);
-
-            if (ik.valid) {
-                shm_ptr->angles[p][0] = ik.th1;
-                shm_ptr->angles[p][1] = ik.th2;
-                shm_ptr->angles[p][2] = ik.th3;
-                // Velocidad baja para transición suave
-                shm_ptr->velocities[p][0] = 0.0; 
-                shm_ptr->velocities[p][1] = 0.0;
-                shm_ptr->velocities[p][2] = 0.0;
-                shm_ptr->is_stance[p] = true;
-            }
-        }
-        shm_ptr->is_walking = true; // Mantener watchdog activo si existe
-        std::this_thread::sleep_for(std::chrono::milliseconds((int)(posture_dt * 1000)));
-    }
+    std::cout << ">> Enviando comando de postura (2.0s)..." << std::endl;
 
     for(int p=0; p<4; ++p) {
         bool is_right = (p == 1 || p == 3);
         Vector3d foot_flat = start_foot_positions[p];
+        // Calcular IK con el cuerpo rotado
         Vector3d ik_input = ComputeWholeBodyIK(foot_flat, p, target_body_pos, target_body_rpy);
         LegAngles ik = solve_IK(ik_input.x(), ik_input.y(), ik_input.z(), is_right);
+        
         if(ik.valid) {
              shm_ptr->angles[p][0] = ik.th1;
              shm_ptr->angles[p][1] = ik.th2;
              shm_ptr->angles[p][2] = ik.th3;
+             
+             // Asegurar ganancias fuertes y velocidad límite
+             shm_ptr->kp_scale[p][0] = 1.0; shm_ptr->kd_scale[p][0] = 1.0;
+             shm_ptr->kp_scale[p][1] = 1.0; shm_ptr->kd_scale[p][1] = 1.0;
+             shm_ptr->kp_scale[p][2] = 1.0; shm_ptr->kd_scale[p][2] = 1.0;
+             shm_ptr->velocities[p][0] = 5.0; 
+             shm_ptr->velocities[p][1] = 5.0; 
+             shm_ptr->velocities[p][2] = 5.0;
         }
     }
+    
+    shm_ptr->transition_time = 2.0; // Tiempo para acomodar el cuerpo
+    shm_ptr->is_walking = false;    // Modo estático
 
-    std::cout << ">> Postura aplicada. MANTENIENDO POSICIÓN..." << std::endl;
+    // Esperar transición
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::cout << ">> Postura aplicada." << std::endl;
+
     std::cout << "\n>>> PRESIONA ENTER PARA INICIAR MARCHA <<<" << std::endl;
     std::cin.get(); // Espera al usuario
     std::cout << ">> Iniciando marcha..." << std::endl;
@@ -557,8 +511,26 @@ int main() {
     // que ya incluye la postura modificada.
     std::cin.get(); 
 
-    std::memset(shm_ptr, 0, sizeof(SharedData));
+    // Enviar todo a 0.0
+    for(int p=0; p<4; ++p) {
+        for(int m=0; m<3; ++m) {
+            shm_ptr->angles[p][m] = 0.0;
+            shm_ptr->velocities[p][m] = 2.0; // Velocidad límite moderada
+            shm_ptr->kp_scale[p][m] = 1.0;
+            shm_ptr->kd_scale[p][m] = 1.0;
+            shm_ptr->desired_accel[p][m] = 0.0;
+        }
+    }
+    shm_ptr->transition_time = 3.0; // 3 segundos para sentarse/colgarse
     shm_ptr->is_walking = false;
-    std::cout << "\n✅ Finalizado con éxito." << std::endl;
+
+    // Esperar a que baje
+    std::this_thread::sleep_for(std::chrono::seconds(3));
+    
+    // Limpieza final
+    std::memset(shm_ptr, 0, sizeof(CommandData));
+    shm_ptr->is_walking = false; // Asegurar que quede en false al salir
+    
+    std::cout << "\n✅ Finalizado. Robot en posición segura." << std::endl;
     return 0;
 }

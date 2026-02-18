@@ -22,12 +22,12 @@ def main():
         return
 
     # 2. Configurar los datos para el envío
-    target_angle = 15.0      # Grados deseados
+    target_angle = 0.0      # Grados deseados
     time_to_reach = 3.0      # Segundos para la transición
     
     # Construcción del bloque de 61 doubles
     angles = [target_angle] * 12         # Motores 0-11
-    velocities = [20.0] * 12              # Velocidad límite (deg/s)
+    velocities = [10.0] * 12              # Velocidad límite (deg/s)
     accels = [0.0] * 12                  # No necesario en modo estático
     kp_scales = [1.0] * 12               # Rigidez total
     kd_scales = [1.0] * 12               # Amortiguación total
