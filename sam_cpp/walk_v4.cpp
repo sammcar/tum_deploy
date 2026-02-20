@@ -15,6 +15,7 @@
 #include <map>
 #include <string>
 #include <Eigen/Dense>
+#include <fstream> // NUEVO: Para guardar el CSV
 
 using Eigen::Vector3d;
 using Eigen::Matrix3d;
@@ -35,6 +36,24 @@ struct CommandData {
     bool is_walking;            // false = modo estático interpolado
 };
 //#pragma pack(pop)
+
+struct TelemetryData
+{
+    double measured_angles[4][3];
+    double measured_velocities[4][3];
+    double measured_torques[4][3];
+    double temperature[4][3];
+    uint64_t timestamp_us;
+    bool fault_code[4]; 
+};
+
+struct LogData {
+    int leg_id;
+    double phase;       // El 'leg_phase' continuo (0.0 a 1.0)
+    bool is_stance;     // El booleano de tu algoritmo (opcional, para referencia)
+    double torque_femur; // tel_ptr->measured_torques[p][1]
+    double torque_tibia; // tel_ptr->measured_torques[p][2]
+};
 
 struct LegAngles { double th1, th2, th3; bool valid; };
 
@@ -253,6 +272,16 @@ int main() {
         return 1;
     }
 
+    const char* tel_name = "/rex_tel";
+    int tel_fd = shm_open(tel_name, O_CREAT | O_RDWR, 0666);
+    ftruncate(tel_fd, sizeof(TelemetryData));
+    TelemetryData* tel_ptr = static_cast<TelemetryData*>(mmap(0, sizeof(TelemetryData), PROT_READ | PROT_WRITE, MAP_SHARED, tel_fd, 0));
+
+    if (tel_ptr == MAP_FAILED) {
+        std::cerr << "Error accediendo a memoria compartida de telemetria" << std::endl;
+        return 1;
+    }
+
     std::cout << "\n[INFO] Usando STAND_XYZ como origen." << std::endl;
 
     // --- CONFIGURACIÓN DE GAIT (Trote) ---
@@ -388,12 +417,24 @@ int main() {
     std::cin.get(); // Espera al usuario
     std::cout << ">> Iniciando marcha..." << std::endl;
 
+    std::cout << "\nTorque Femur FL: " << tel_ptr->measured_torques[0][1] << " Nm      " << std::endl;
+    std::cout << "\nTorque Tibia FL: " << tel_ptr->measured_torques[0][2] << " Nm      " << std::endl;
+    std::cout << "\nTorque Femur FR: " << tel_ptr->measured_torques[1][1] << " Nm      " << std::endl;
+    std::cout << "\nTorque Tibia FR: " << tel_ptr->measured_torques[1][2] << " Nm      " << std::endl;
+    std::cout << "\nTorque Femur BL: " << tel_ptr->measured_torques[2][1] << " Nm      " << std::endl;
+    std::cout << "\nTorque Tibia BL: " << tel_ptr->measured_torques[2][2] << " Nm      " << std::endl;
+    std::cout << "\nTorque Femur BR: " << tel_ptr->measured_torques[3][1] << " Nm      " << std::endl;
+    std::cout << "\nTorque Tibia BR: " << tel_ptr->measured_torques[3][2] << " Nm      " << std::endl;
+
     // ============================================================
     // FASE C: BUCLE DINÁMICO (Trote + Postura Mantenida)
     // ============================================================
     auto start_time = std::chrono::steady_clock::now();
     double loop_dt = 0.004;
-    double prev_angles[4][3] = {0}; 
+    double prev_angles[4][3] = {0};
+
+    std::vector<LogData> historial;
+    historial.reserve(20000);
     
     // Inicializamos prev_angles con lo que tenemos en SHM (la postura ya aplicada)
     for(int p=0; p<4; ++p) {
@@ -443,6 +484,18 @@ int main() {
             // --- Trayectoria Normal ---
             double leg_phase = fmod(global_phase + gait_offsets[p], 1.0);
             bool stance = (leg_phase >= 0.5);
+
+            // --- NUEVO: GUARDAR TELEMETRÍA (Sólo Pata 0) ---
+            if (!tiempo_agotado) {
+                historial.push_back({
+                    p,                               // leg_id
+                    leg_phase,                       // phase
+                    stance,                          // is_stance
+                    tel_ptr->measured_torques[p][1], // Motor 1 (Femur)
+                    tel_ptr->measured_torques[p][2]  // Motor 2 (Tibia)
+                });
+            }
+
             Vector3d origin = LEGS_STAND_XYZ[p];
             TrajectoryPoint point = get_step_trajectory(leg_phase, step_duration, origin.x(), origin.z(), step_len, step_h);
 
@@ -532,5 +585,24 @@ int main() {
     shm_ptr->is_walking = false; // Asegurar que quede en false al salir
     
     std::cout << "\n✅ Finalizado. Robot en posición segura." << std::endl;
+
+    // --- NUEVO: GUARDAR EL CSV ---
+    std::cout << ">> Guardando datos de torques en 'torques_log.csv'..." << std::endl;
+    std::ofstream log_file("torques_log.csv");
+    if (log_file.is_open()) {
+        log_file << "Leg_ID,Phase,Is_Stance,Torque_Femur,Torque_Tibia\n";
+        for (const auto& dato : historial) {
+            log_file << dato.leg_id << ","
+                     << dato.phase << "," 
+                     << dato.is_stance << "," 
+                     << dato.torque_femur << "," 
+                     << dato.torque_tibia << "\n";
+        }
+        log_file.close();
+        std::cout << "✅ Archivo 'torques_log.csv' guardado correctamente." << std::endl;
+    } else {
+        std::cerr << "❌ Error: No se pudo crear el archivo CSV." << std::endl;
+    }
+    
     return 0;
 }

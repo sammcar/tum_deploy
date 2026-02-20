@@ -10,19 +10,22 @@ BUS_MAP = {
     5: [10, 11, 12],
 }
 
+# --- LÍMITES POR ARTICULACIÓN (Min, Max) en revoluciones ---
+# Ajusta estos valores según los topes mecánicos de tu diseño.
+LIMITS_COXA  = (-0.25, 0.25)
+LIMITS_FEMUR = (-0.45, 0.25)
+LIMITS_TIBIA = (-0.5, 0.5)
+
+# Esta lista mapea los límites con el orden de los IDs en la matriz: [COXA, FEMUR, TIBIA]
+JOINT_LIMITS = [LIMITS_COXA, LIMITS_FEMUR, LIMITS_TIBIA]
+JOINT_NAMES  = ["Coxa", "Fémur", "Tibia"]
+
 # --- MATRIZ DE CONFIGURACIÓN POR PATA ---
 # Formato: 
-# "NOMBRE_PATA": ([IDS], KP, KI, KD, ILIMIT, MAX_VOLT, MAX_AMP, MAX_VEL, DEF_VEL_LIM, DEF_ACC_LIM)
-#
-# Tips:
-# - KP, KI, KD: PID de posición.
-# - ILIMIT: Límite del integrador.
-# - MAX_VEL: Límite duro de velocidad (corte).
-# - DEF_VEL_LIM: Velocidad máxima usada en perfil trapezoidal (movimientos suaves).
-# - DEF_ACC_LIM: Aceleración máxima (evita tirones bruscos).
+# "NOMBRE_PATA": ([ID_COXA, ID_FEMUR, ID_TIBIA], KP, KI, KD, ILIMIT, MAX_VOLT, MAX_AMP, MAX_VEL, DEF_VEL_LIM, DEF_ACC_LIM)
 
 LEG_MATRIX = {
-    #                      IDS           KP     KI    KD    ILIM   VOLT   AMP   VEL   D_VEL  D_ACC
+    #                      IDS           KP     KI    KD    ILIM   VOLT   AMP    VEL   D_VEL  D_ACC
     "FRONT_RIGHT (FR)":  ([4, 5, 6],    700.0,  0.0,  7.0,   0.0,   50.0,  36.0, 7.0,  2.0,   4.0),
     "FRONT_LEFT (FL)":   ([1, 2, 3],    600.0,  0.0,  5.0,   0.0,   50.0,  36.0, 7.0,  2.0,   4.0),
     "BACK_RIGHT (BR)":   ([10, 11, 12], 950.0,  0.0,  9.5,   0.0,   50.0,  36.0, 7.0,  2.0,   4.0), 
@@ -43,32 +46,32 @@ async def send_command_safe(stream, command_str, timeout=1.8):
         return None, f"EXCEPTION: {e}"
 
 async def main():
-    print(f"--- INICIANDO CONFIGURACIÓN DE PARAMETROS (MATRIZ) ---")
+    print(f"--- INICIANDO CONFIGURACIÓN DE PARAMETROS ---")
     
-    # Inicializar transporte
     transport = moteus_pi3hat.Pi3HatRouter(servo_bus_map=BUS_MAP)
     
-    # Recolectar todos los IDs de la matriz para crear los controladores
     all_ids = []
     for params in LEG_MATRIX.values():
-        all_ids.extend(params[0]) # params[0] es la lista de IDs
+        all_ids.extend(params[0])
     
     servos = {id: moteus.Controller(id=id, transport=transport) for id in all_ids}
     errores = []
 
-    # Iterar sobre cada fila de la matriz (cada pata)
     for leg_name, params in LEG_MATRIX.items():
-        # Desempaquetar los 10 valores de la tupla
+        # Desempaquetar los 10 valores
         ids, kp, ki, kd, ilimit, volt, amp, vel, def_vel, def_acc = params
         
         print(f"\n>> CONFIGURANDO {leg_name}")
         print(f"   PID: {kp}/{ki}/{kd} | Limites Def: Vel={def_vel} Acc={def_acc}")
 
-        for motor_id in ids:
-            print(f"   -> Motor {motor_id}:", end=" ", flush=True)
+        # enumerate(ids) nos da un índice (0, 1, 2) para saber si es Coxa, Fémur o Tibia
+        for i, motor_id in enumerate(ids):
+            joint_name = JOINT_NAMES[i]
+            pos_min, pos_max = JOINT_LIMITS[i]
+            
+            print(f"   -> {joint_name} (Motor {motor_id}) [Pos: {pos_min} a {pos_max}]:", end=" ", flush=True)
             stream = moteus.Stream(servos[motor_id])
             
-            # Construcción de comandos basados en la fila de la matriz
             commands = [
                 f"conf set servo.max_voltage {volt}",
                 f"conf set servo.max_current_A {amp}",
@@ -77,8 +80,10 @@ async def main():
                 f"conf set servo.pid_position.ki {ki}",
                 f"conf set servo.pid_position.kd {kd}",
                 f"conf set servo.pid_position.ilimit {ilimit}",
-                f"conf set servo.default_velocity_limit {def_vel}", # <--- NUEVO
-                f"conf set servo.default_accel_limit {def_acc}",    # <--- NUEVO
+                f"conf set servo.default_velocity_limit {def_vel}",
+                f"conf set servo.default_accel_limit {def_acc}",
+                f"conf set servopos.position_min {pos_min}", 
+                f"conf set servopos.position_max {pos_max}", 
                 "conf write"
             ]
 
@@ -88,22 +93,19 @@ async def main():
                 if err:
                     print(f"[FALLÓ: {cmd} -> {err}]", end=" ")
                     motor_success = False
-                    break # Salir de la lista de comandos si uno falla
+                    break 
             
             if motor_success:
-                print("[OK - Guardado]")
+                print("[OK]")
             else:
                 errores.append(motor_id)
-                print("") # Nueva linea para el error
+                print("") 
 
     print("\n" + "="*60)
     if errores:
         print(f"RESUMEN: Fallaron los motores: {errores}")
-        print("Revisa conexiones o conflictos en el bus.")
     else:
-        print("¡EXITO TOTAL! Todos los parámetros han sido escritos y guardados.")
-        print("Nota: Los cambios de PID/Limites son inmediatos.")
-        print("      El voltaje requiere reinicio de energía.")
+        print("¡ÉXITO TOTAL! Todos los parámetros han sido escritos y guardados.")
     print("="*60)
 
 if __name__ == '__main__':

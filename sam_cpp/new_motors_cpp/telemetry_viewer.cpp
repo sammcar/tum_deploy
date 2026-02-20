@@ -4,9 +4,24 @@
 #include <chrono>
 #include <csignal>
 #include <atomic>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
-// Incluimos tu cabecera oficial para asegurar que la estructura sea idéntica
+// Cabecera oficial para motores
 #include "shared_memory.hpp"
+
+// Estructura de la IMU (debe coincidir con tu publicador)
+struct IMUData {
+    double acc[3];
+    double gyro[3];
+    double roll;
+    double pitch;
+    double yaw;
+    double temp;
+    uint64_t timestamp;
+};
 
 std::atomic<bool> keep_running{true};
 
@@ -17,27 +32,34 @@ void signal_handler(int) {
 int main() {
     std::signal(SIGINT, signal_handler);
 
-    // 1. Inicializamos el gestor de memoria
-    // MemoryManager ya se encarga de abrir /rex_tel y /rex_cmd
+    // 1. Inicializar Gestor de Memoria de Motores
     MemoryManager memory;
-
     if (!memory.is_valid()) {
-        std::cerr << "[ERROR] No se pudo acceder a la memoria compartida." << std::endl;
-        std::cerr << "¿Está corriendo el controlador principal?" << std::endl;
+        std::cerr << "[ERROR] No se pudo acceder a la memoria de motores." << std::endl;
         return 1;
     }
 
-    std::cout << "--- Monitor de Telemetría REX ---" << std::endl;
-    std::cout << "Presiona Ctrl+C para salir." << std::endl;
+    // 2. Abrir Memoria Compartida de la IMU
+    int shm_imu_fd = shm_open("/imu_data", O_RDONLY, 0666);
+    if (shm_imu_fd == -1) {
+        std::cerr << "[ERROR] No se pudo acceder a la memoria de la IMU. ¿Está corriendo imu_publisher?" << std::endl;
+        return 1;
+    }
+    IMUData* imu = (IMUData*)mmap(0, sizeof(IMUData), PROT_READ, MAP_SHARED, shm_imu_fd, 0);
+
+    std::cout << "--- Monitor de Telemetría REX + IMU ---" << std::endl;
     std::this_thread::sleep_for(std::chrono::seconds(1));
 
+    uint64_t last_imu_ts = 0;
+
     while (keep_running) {
-        // Limpiar pantalla (ANSI escape)
+        // Limpiar pantalla
         std::cout << "\033[H\033[2J"; 
 
-        auto* tel = memory.tel; // Puntero a la telemetría real
+        auto* tel = memory.tel;
 
-        std::cout << "Timestamp: " << tel->timestamp_us << " us" << std::endl;
+        // --- SECCIÓN MOTORES ---
+        std::cout << "Timestamp Motores: " << tel->timestamp_us << " us" << std::endl;
         std::cout << "-----------------------------------------------------------------------" << std::endl;
         std::cout << "| PATA | MOTOR | ANGULO (deg) | VEL (deg/s) | TORQUE (Nm) | TEMP (C) |" << std::endl;
         std::cout << "-----------------------------------------------------------------------" << std::endl;
@@ -50,7 +72,6 @@ int main() {
             else leg_name = "BR";
 
             for (int m = 0; m < 3; ++m) {
-                // Imprimir cada motor de la pata
                 std::cout << "|  " << (m == 0 ? leg_name : "  ") << "  |   " << m << "   | "
                           << std::fixed << std::setprecision(2) << std::setw(12) << tel->measured_angles[p][m] << " | "
                           << std::setw(11) << tel->measured_velocities[p][m] << " | "
@@ -60,14 +81,33 @@ int main() {
             std::cout << "|------|-------|--------------|-------------|-------------|----------|" << std::endl;
         }
 
-        // Mostrar estados de pánico (Fault Codes)
-        std::cout << "\nESTADO DE PÁNICO: ";
+        // --- SECCIÓN ESTADOS ---
+        std::cout << "\nESTADO PÁNICO: ";
         for (int p = 0; p < 4; ++p) {
             std::cout << "P" << p << ":[" << (tel->fault_code[p] ? "\033[1;31mMUERTA\033[0m" : "\033[1;32m OK \033[0m") << "]  ";
         }
         std::cout << std::endl;
 
-        // Esperar 100ms para la siguiente lectura
+        // --- SECCIÓN IMU (NUEVA) ---
+        // Calcular frecuencia real de la IMU para el monitor
+        double imu_hz = 0;
+        if (last_imu_ts > 0 && imu->timestamp > last_imu_ts) {
+            imu_hz = 1000000.0 / (imu->timestamp - last_imu_ts);
+        }
+        last_imu_ts = imu->timestamp;
+
+        std::cout << "\n----------------------- ORIENTACIÓN DEL ROBOT -----------------------" << std::endl;
+        std::cout << std::fixed << std::setprecision(2);
+        std::cout << "  ROLL:  " << std::setw(7) << imu->roll  << " deg  |  " 
+                  << "ACC_X: " << std::setw(6) << imu->acc[0] << " g" << std::endl;
+        std::cout << "  PITCH: " << std::setw(7) << imu->pitch << " deg  |  "
+                  << "ACC_Y: " << std::setw(6) << imu->acc[1] << " g" << std::endl;
+        std::cout << "  YAW:   " << std::setw(7) << imu->yaw   << " deg  |  "
+                  << "ACC_Z: " << std::setw(6) << imu->acc[2] << " g" << std::endl;
+        std::cout << "  TEMP:  " << std::setw(7) << imu->temp  << " C    |  "
+                  << "FREQ:  " << std::setw(6) << imu_hz     << " Hz" << std::endl;
+        std::cout << "---------------------------------------------------------------------" << std::endl;
+
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
