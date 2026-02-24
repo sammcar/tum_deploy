@@ -95,6 +95,13 @@ target_link_libraries(walk_v4
     pthread
 )
 
+add_executable(walk_v5 walk_v5.cpp)
+target_link_libraries(walk_v5
+    Eigen3::Eigen
+    rt
+    pthread
+)
+
 add_executable(cleaner memory_cleaner.cpp)
 target_link_libraries(cleaner
     Eigen3::Eigen
