@@ -13,7 +13,7 @@ find_package(Eigen3 REQUIRED)
 find_package(Threads REQUIRED)
 
 # Indicar dónde están los archivos .hpp
-include_directories(include)
+include_directories(libs)
 
 # Crear el ejecutable combinando los archivos fuente
 add_executable(walking_sam 

@@ -26,7 +26,7 @@ FetchContent_MakeAvailable(pi3hat)
 # 3. Directorios de inclusión
 # Asumimos que tus .hpp están en la carpeta 'include'
 include_directories(
-    include
+    libs
     ${EIGEN3_INCLUDE_DIR}
 )
 
