@@ -14,9 +14,11 @@
 using Eigen::Vector3d;
 
 bool setup_robot(
-    int& max_ciclos,
+    double& duracion_test,
     double& step_duration,
-    double& step_len,
+    double& vx,
+    double& vy,
+    double& wz,
     double& step_h,
     IMUData*& imu_ptr,
     CommandData*& shm_ptr,
@@ -25,17 +27,29 @@ bool setup_robot(
     Eigen::Vector3d& target_body_pos,
     Eigen::Vector3d& target_body_rpy,
     double (&gait_offsets)[4],
-    Eigen::Vector3d (&start_foot_positions)[4]
-) {
+    Eigen::Vector3d (&start_foot_positions)[4],
+    bool require_real_hardware)
+    {
     // --- 1. INPUT DATOS BÁSICOS (Marcha) ---
-    max_ciclos = pedir_dato<int>("Ciclos totales (ej. 20)");
+    // --- 1. INPUT DATOS BÁSICOS (Marcha) ---
     step_duration = pedir_dato<double>("Periodo paso (s) (ej. 0.4)"); 
-    step_len = pedir_dato<double>("Largo paso (mm) (ej. 80)");
     step_h = pedir_dato<double>("Altura paso (mm) (ej. 40)");
+    duracion_test = pedir_dato<double>("Duración test (seg) (ej. 10)");
+
+    std::cout << ">> Velocidad X (mm/s): "; std::cin >> vx;
+    std::cout << ">> Velocidad Y (mm/s): "; std::cin >> vy;
+    std::cout << ">> Giro Wz (rad/s): "; std::cin >> wz;
+
+    if (!require_real_hardware) {
+        std::cout << "\n[WARN] MODO PC ACTIVADO: Simulando sensores..." << std::endl;
+    } else {
+        std::cout << "\n[INFO] MODO REAL ACTIVADO: Se requieren sensores reales." << std::endl;
+    }
 
     // Conversión a metros
-    step_len /= 1000.0;
     step_h /= 1000.0;
+    vx /= 1000.0; 
+    vy /= 1000.0;
 
     // --- NUEVO: ABRIR MEMORIA COMPARTIDA IMU ---
     int imu_fd = shm_open("/imu_data", O_RDONLY, 0666);
@@ -96,13 +110,32 @@ bool setup_robot(
     std::cout << ">> Enviando comando de alineación inicial (3.0s)..." << std::endl;
     
     // 1. Calcular ángulos neutros
+    // 1. Calcular ángulos iniciales basándonos en la VELOCIDAD de arranque
     for(int p=0; p<4; ++p) {
         bool is_right = (p == 1 || p == 3);
         Vector3d origin = LEGS_STAND_XYZ[p];
         double start_phase = fmod(0.0 + gait_offsets[p], 1.0);
-        TrajectoryPoint pt = get_step_trajectory(start_phase, step_duration, origin.x(), origin.z(), step_len, step_h);
-        start_foot_positions[p] = Vector3d(pt.x, origin.y(), pt.z);
-        start_angles[p] = solve_IK(pt.x, origin.y(), pt.z, is_right);
+        
+        Vector3d pt_pos;
+
+        // Misma lógica de stance/swing del main
+        bool stance = (start_phase >= 0.5);
+        if (stance) {
+            double t = (start_phase - 0.5) * 2.0;
+            Vector3d v_total = Vector3d(vx, vy, 0.0) + Vector3d(0,0,wz).cross(HIP_OFFSETS[p]);
+            Vector3d p_start = origin - v_total * (step_duration / 4.0);
+            Vector3d p_target = origin + v_total * (step_duration / 4.0);
+            
+            pt_pos = p_target + t * (p_start - p_target);
+            pt_pos.z() = origin.z();
+        } else {
+            TrajectoryPoint3D tp = generate_bezier_swing(start_phase, origin, HIP_OFFSETS[p], vx, vy, wz, 
+                                          step_duration/2.0, step_duration/2.0, step_h);
+            pt_pos = tp.pos;
+        }
+
+        start_foot_positions[p] = pt_pos;
+        start_angles[p] = solve_IK(pt_pos.x(), pt_pos.y(), pt_pos.z(), is_right);
     }
 
     // 2. Escribir en SHM (UNA SOLA VEZ)

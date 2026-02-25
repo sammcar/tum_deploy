@@ -6,7 +6,7 @@ import math
 
 # --- CONFIGURACIÓN INICIAL ---
 PORT = '/dev/ttyAMA0'  
-BAUD = 9600            
+BAUD = 115200            
 # -----------------------------
 
 # DICCIONARIO DE COMANDOS HEXADECIMALES

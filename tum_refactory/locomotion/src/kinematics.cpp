@@ -137,3 +137,39 @@ TrajectoryPoint get_step_trajectory(double phase, double step_period,
         x_end, z_ground
     );
 }
+
+/**
+ * @brief Genera la trayectoria de swing usando Bézier 3D
+ */
+TrajectoryPoint3D generate_bezier_swing(double phase, const Eigen::Vector3d& p_neutral,
+                                     const Eigen::Vector3d& hip_offset, double vx, double vy,
+                                     double omega_z, double t_stance, double t_swing,
+                                     double step_height) {
+    
+    Eigen::Vector3d v_linear(vx, vy, 0.0);
+    Eigen::Vector3d omega_vec(0, 0, omega_z);
+    Eigen::Vector3d v_rotation = omega_vec.cross(hip_offset);
+
+    Eigen::Vector3d p_target = p_neutral + (v_linear + v_rotation) * (t_stance / 2.0);
+    Eigen::Vector3d p_start = p_neutral - (v_linear + v_rotation) * (t_stance / 2.0);
+
+    double t = phase * 2.0; 
+    
+    Eigen::Vector3d p0 = p_start;
+    Eigen::Vector3d p1 = p_start; p1.z() += step_height * 1.5;
+    Eigen::Vector3d p2 = p_target; p2.z() += step_height * 1.5;
+    Eigen::Vector3d p3 = p_target;
+
+    double u = 1.0 - t;
+    TrajectoryPoint3D res;
+    res.pos = (u*u*u)*p0 + 3*(u*u)*t*p1 + 3*u*(t*t)*p2 + (t*t*t)*p3;
+    
+    // Evitar división por cero
+    if (t_swing > 1e-5) {
+        res.acc = (6 * u * (p2 - 2 * p1 + p0) + 6 * t * (p3 - 2 * p2 + p1)) / (t_swing * t_swing);
+    } else {
+        res.acc = Eigen::Vector3d::Zero();
+    }
+    
+    return res;
+}
