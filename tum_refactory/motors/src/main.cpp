@@ -20,7 +20,7 @@
 SharedTelemetry global_telemetry;
 std::atomic<bool> g_running{true};
 
-const bool kSchizoMode = false;
+const bool kSchizoMode = true;
 const double kSchizoThresholdDeg = 100.0;
 const double kStallTorqueThreshold = 3.0;
 const double kStallVelThreshold = 0.1;

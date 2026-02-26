@@ -32,3 +32,21 @@ target_link_libraries(walking_sam
     Threads::Threads 
     rt
 )
+
+# Crear el ejecutable combinando los archivos fuente
+add_executable(test 
+    src/test.cpp 
+    src/kinematics.cpp
+    src/setup.cpp
+)
+
+# Vincular las librerías necesarias
+# - Eigen3::Eigen: Para las matemáticas de vectores y matrices
+# - Threads::Threads: Para std::thread y std::atomic
+# - rt: (Real-Time) Estrictamente necesario para shm_open y memoria compartida en Linux
+target_link_libraries(test 
+    PRIVATE 
+    Eigen3::Eigen 
+    Threads::Threads 
+    rt
+)
