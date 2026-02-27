@@ -19,7 +19,9 @@ include_directories(libs)
 add_executable(walking_sam 
     src/main.cpp 
     src/kinematics.cpp
-    src/setup.cpp
+    src/memory_setup.cpp
+    src/gait_setup.cpp
+    src/zmp_control.cpp
 )
 
 # Vincular las librerías necesarias
@@ -37,7 +39,8 @@ target_link_libraries(walking_sam
 add_executable(test 
     src/test.cpp 
     src/kinematics.cpp
-    src/setup.cpp
+    src/memory_setup.cpp
+    src/gait_setup.cpp
 )
 
 # Vincular las librerías necesarias

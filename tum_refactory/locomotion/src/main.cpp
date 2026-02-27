@@ -15,8 +15,9 @@
 #include "robot_types.hpp"
 #include "robot_config.hpp"
 #include "kinematics.hpp"
-#include "utils.hpp"
-#include "setup.hpp"
+#include "memory_setup.hpp"
+#include "gait_setup.hpp"
+#include "zmp_control.hpp"
 
 std::atomic<bool> g_running{true};
 void SignalHandler(int) { g_running = false; }
@@ -27,6 +28,9 @@ int main() {
     // Las variables ahora se declaran aquí, pero se llenan dentro de setup_robot
     double duracion_test, step_duration, vx, vy, wz, step_h;
     bool require_real_hardware = true; // Cambia a false para simular sin hardware real
+    bool dont_ask = true; // Cambia a true para usar valores fijos sin preguntar en consola
+    bool ask_pid = true; // Por ahora no se pide, pero se puede activar para ajustar Kp/Kd
+    double Kp_zmp, Kd_zmp;
 
     IMUData* imu_ptr = nullptr;
     CommandData* shm_ptr = nullptr;
@@ -41,14 +45,33 @@ int main() {
     double gait_offsets[4] = {0.0, 0.5, 0.75, 0.25}; // Crawl, cambiar duty_factor por 0.75
     Eigen::Vector3d start_foot_positions[4];
 
-    // Llamamos al setup actualizado (Fase A y B unificadas con la velocidad de arranque)
-    if (!setup_robot(duracion_test, step_duration, vx, vy, wz, step_h, 
-                     imu_ptr, shm_ptr, tel_ptr, contact_ptr, 
-                     target_body_pos, target_body_rpy, 
-                     gait_offsets, start_foot_positions, require_real_hardware)) {
-        std::cerr << "[FATAL] Error en la inicialización del robot." << std::endl;
+    // ============================================================
+    // FASE 1: INICIALIZACIÓN DE MEMORIA Y SENSORES
+    // ============================================================
+    if (!init_shared_memory(require_real_hardware, imu_ptr, shm_ptr, tel_ptr, contact_ptr)) {
+        std::cerr << "[FATAL] Fallo al inicializar la memoria. Saliendo..." << std::endl;
+        return 1;
+    }
+
+    // ============================================================
+    // FASE 2: CONFIGURACIÓN DE POSTURA Y MARCHA
+    // ============================================================
+    if (!init_gait_posture(dont_ask, duracion_test, step_duration, vx, vy, wz, step_h, 
+                           shm_ptr, target_body_pos, target_body_rpy, 
+                           duty_factor, gait_offsets, start_foot_positions)) {
+        std::cerr << "[FATAL] Error en la configuración de la marcha." << std::endl;
         return 1; 
     }
+
+    if (ask_pid) {
+        std::cout << "\n[INFO] Ajuste de Ganancias PID para ZMP Control." << std::endl;
+        std::cout << ">> Kp (Proporcional): "; std::cin >> Kp_zmp;
+        std::cout << ">> Kd (Derivativo): "; std::cin >> Kd_zmp;
+    }else{
+        Kp_zmp = 0.05; // Inicia en cero para probar primero la cinemática
+        Kd_zmp = 0.01;
+    }
+    std::cin.get();
 
     std::cout << "\n>>> PRESIONA ENTER PARA INICIAR MARCHA <<<" << std::endl;
     std::cin.get();
@@ -65,6 +88,7 @@ int main() {
     bool first_run = true;
     bool leg_finished[4] = {false, false, false, false};
     Eigen::Vector3d final_foot_pos_3d[4];
+    Eigen::Vector3d base_body_pos = target_body_pos;
 
     // ============================================================
     // FASE C: BUCLE DINÁMICO DE MARCHA
@@ -76,6 +100,20 @@ int main() {
         bool tiempo_agotado = (elapsed > duracion_test);
         bool todo_aterrizado = true; // Empieza en true, si una pata está en el aire se vuelve false
         double global_phase = fmod(elapsed / step_duration, 1.0);
+
+        // Calcular altura dinámica del CoM
+        double z_sum = 0.0;
+        for (int i=0; i<4; ++i) z_sum += LEGS_STAND_XYZ[i].z();
+        double h_com = std::abs((z_sum / 4.0) + target_body_pos.z());
+
+        // Llamar al módulo de control
+        Eigen::Vector2d u_zmp = compute_zmp_offset(require_real_hardware, contact_ptr, imu_ptr, global_phase, 
+                                                   gait_offsets, duty_factor, step_duration, vx, vy, wz, step_h, 
+                                                   h_com, Kp_zmp, Kd_zmp);
+
+        // Sumar el offset calculado a la postura base configurada en Fase B
+        target_body_pos.x() = base_body_pos.x() + u_zmp.x();
+        target_body_pos.y() = base_body_pos.y() + u_zmp.y();
 
         for (int p = 0; p < 4; p++) {
             
@@ -104,22 +142,39 @@ int main() {
 
             // --- TRAYECTORIA NORMAL ---
             double leg_phase = fmod(global_phase + gait_offsets[p], 1.0);
-            bool stance = (leg_phase >= duty_factor); // Si el ciclo de la pata es mayor que el duty factor, está en stance
+            
+            // Calculamos proporciones de tiempo reales
+            double stance_portion = duty_factor;
+            double swing_portion = 1.0 - duty_factor;
+            
+            // Si la fase superó la porción de vuelo, la pata ya está en el suelo
+            bool stance = (leg_phase >= swing_portion); 
+            
             Eigen::Vector3d origin = LEGS_STAND_XYZ[p];
             TrajectoryPoint3D tp; 
 
             if (stance) {
-                double t = (leg_phase - 0.5) * 2.0;
+                // Normalizar 't' (0.0 a 1.0) para la fase de stance
+                double t = (leg_phase - swing_portion) / stance_portion;
+                
+                // Las velocidades y arrastres dependen de cuánto tiempo dura el stance
+                double t_stance = step_duration * stance_portion;
                 Eigen::Vector3d v_total = Eigen::Vector3d(vx, vy, 0.0) + Eigen::Vector3d(0,0,wz).cross(HIP_OFFSETS[p]);
-                Eigen::Vector3d p_start = origin - v_total * (step_duration / 4.0);
-                Eigen::Vector3d p_target = origin + v_total * (step_duration / 4.0);
+                
+                // p_start y p_target se separan según la distancia recorrida en ese t_stance
+                Eigen::Vector3d p_start = origin - v_total * (t_stance / 2.0);
+                Eigen::Vector3d p_target = origin + v_total * (t_stance / 2.0);
                 
                 tp.pos = p_target + t * (p_start - p_target);
                 tp.pos.z() = origin.z();
                 tp.acc = Eigen::Vector3d::Zero();
             } else {
-                tp = generate_bezier_swing(leg_phase, origin, HIP_OFFSETS[p], vx, vy, wz, 
-                                          step_duration/2.0, step_duration/2.0, step_h);
+                // Generador de Bézier con los tiempos y factor correctos
+                double t_stance = step_duration * stance_portion;
+                double t_swing = step_duration * swing_portion;
+                
+                tp = generate_bezier_swing(leg_phase, duty_factor, origin, HIP_OFFSETS[p], vx, vy, wz, 
+                                          t_stance, t_swing, step_h);
             }
 
             // --- GATILLO DE PARADA POR TIEMPO ---

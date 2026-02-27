@@ -10,115 +10,64 @@
 #include <fstream>
 #include <csignal>
 #include <cmath>
-#include <iomanip> // Requerido para std::setprecision y std::setw
-#include <mutex>   // Requerido para std::mutex y std::lock_guard
 
 // Inclusión de módulos del proyecto ATOM-51
 #include "robot_types.hpp"
 #include "robot_config.hpp"
 #include "kinematics.hpp"
-#include "utils.hpp"
-#include "setup.hpp"
+#include "memory_setup.hpp"
+#include "gait_setup.hpp"
 
 std::atomic<bool> g_running{true};
 void SignalHandler(int) { g_running = false; }
-
-// --- GLOBALES PARA EL HILO DE MONITOREO ---
-Eigen::Vector3d g_pos_deseada_hilo[4]; 
-int g_pata_a_monitorear = 0; // 0: Front-Right, 1: Back-Right, etc. (según tu config)
-std::mutex g_pos_mutex;      // Protege el acceso a g_pos_deseada_hilo
-
-/**
- * Calcula el error de posición cartesiano para el control de fuerza virtual.
- * Lee los ángulos reales de la memoria compartida y calcula la FK.
- */
-Eigen::Vector3d calcular_error_posicion_virtual(int leg_idx, const Eigen::Vector3d& pos_deseada, TelemetryData* tel_ptr) {
-    // 1. Obtener ángulos reales medidos (en grados) desde la memoria compartida
-    double q1 = tel_ptr->measured_angles[leg_idx][0];
-    double q2 = tel_ptr->measured_angles[leg_idx][1];
-    double q3 = tel_ptr->measured_angles[leg_idx][2];
-
-    // 2. Convertir a radianes y aplicar offsets si es necesario para la FK
-    // Nota: solve_FK suele esperar radianes y q2 suele tener un offset de 90 deg
-    double theta1 = q1 * M_PI / 180.0;
-    double theta2 = (q2 - 90.0) * M_PI / 180.0; 
-    double theta3 = q3 * M_PI / 180.0;
-
-    // 3. Calcular Cinemática Directa (FK) para obtener la posición real del pie (x, y, z)
-    bool es_derecha = (leg_idx == 1 || leg_idx == 3);
-    Eigen::Vector3d pos_real = solve_FK(theta1, theta2, theta3, es_derecha);
-
-    // 4. Calcular el error de posición (xd - x)
-    Eigen::Vector3d error_posicion = pos_deseada - pos_real;
-
-    return error_posicion;
-}
-
-/**
- * HILO DE MONITOREO: Calcula e imprime el error en consola de forma segura cada 10ms
- */
-void monitor_error_loop(TelemetryData* tel_ptr) {
-    while (g_running) {
-        Eigen::Vector3d pos_d;
-        {
-            // Bloqueamos brevemente para copiar la posición deseada sin riesgo de lectura corrupta
-            std::lock_guard<std::mutex> lock(g_pos_mutex);
-            pos_d = g_pos_deseada_hilo[g_pata_a_monitorear];
-        }
-
-        Eigen::Vector3d error = calcular_error_posicion_virtual(g_pata_a_monitorear, pos_d, tel_ptr);
-        
-        // Formateo para que se sobreescriba en la misma línea
-        std::cout << "\r[MONITOR PATA " << g_pata_a_monitorear << "] "
-                  << "Error X: " << std::fixed << std::setprecision(4) << std::setw(8) << error.x() << " | "
-                  << "Y: " << std::setw(8) << error.y() << " | "
-                  << "Z: " << std::setw(8) << error.z() << " m    " << std::flush;
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    std::cout << std::endl; // Salto de línea limpio al terminar
-}
 
 int main() {
     std::signal(SIGINT, SignalHandler);
 
     // Las variables ahora se declaran aquí, pero se llenan dentro de setup_robot
     double duracion_test, step_duration, vx, vy, wz, step_h;
-    bool require_real_hardware = true; // Cambia a false para simular sin hardware real
+    bool require_real_hardware = false; // Cambia a false para simular sin hardware real
+    bool dont_ask = false; // Cambia a true para usar valores fijos sin preguntar en consola
 
     IMUData* imu_ptr = nullptr;
     CommandData* shm_ptr = nullptr;
     TelemetryData* tel_ptr = nullptr;
     ContactData* contact_ptr = nullptr;
     Eigen::Vector3d target_body_pos, target_body_rpy;
-    double duty_factor = 0.5; // Proporción de tiempo en stance (0.5 = 50% stance, 50% swing)
-    double gait_offsets[4] = {0.0, 0.5, 0.5, 0.0}; // Trot
+    double duty_factor = 0.75; // Proporción de tiempo en stance (0.5 = 50% stance, 50% swing)
+    // double gait_offsets[4] = {0.0, 0.5, 0.5, 0.0}; // Trot
     // double gait_offsets[4] = {0.0, 0.5, 0.0, 0.0}; // Pace
     // double gait_offsets[4] = {0.0, 0.0, 0.5, 0.5}; // Bound
     // double gait_offsets[4] = {0.0, 0.5, 0.75, 0.25}; // Amble
-    //double gait_offsets[4] = {0.0, 0.5, 0.75, 0.25}; // Crawl, cambiar duty_factor por 0.75
+    double gait_offsets[4] = {0.0, 0.5, 0.75, 0.25}; // Crawl, cambiar duty_factor por 0.75
     Eigen::Vector3d start_foot_positions[4];
 
-    // Llamamos al setup
-    if (!setup_robot(duracion_test, step_duration, vx, vy, wz, step_h, 
-                     imu_ptr, shm_ptr, tel_ptr, contact_ptr, 
-                     target_body_pos, target_body_rpy, 
-                     gait_offsets, start_foot_positions, require_real_hardware)) {
-        std::cerr << "[FATAL] Error en la inicialización del robot." << std::endl;
+    // ============================================================
+    // FASE 1: INICIALIZACIÓN DE MEMORIA Y SENSORES
+    // ============================================================
+    if (!init_shared_memory(require_real_hardware, imu_ptr, shm_ptr, tel_ptr, contact_ptr)) {
+        std::cerr << "[FATAL] Fallo al inicializar la memoria. Saliendo..." << std::endl;
+        return 1;
+    }
+
+    // ============================================================
+    // FASE 2: CONFIGURACIÓN DE POSTURA Y MARCHA
+    // ============================================================
+    if (!init_gait_posture(dont_ask, duracion_test, step_duration, vx, vy, wz, step_h, 
+                           shm_ptr, target_body_pos, target_body_rpy, 
+                           duty_factor, gait_offsets, start_foot_positions)) {
+        std::cerr << "[FATAL] Error en la configuración de la marcha." << std::endl;
         return 1; 
     }
 
     std::cout << "\n>>> PRESIONA ENTER PARA INICIAR MARCHA <<<" << std::endl;
     std::cin.get();
 
-    // --- LANZAR HILO DE MONITOREO LUEGO DEL ENTER ---
-    std::thread monitor_thread(monitor_error_loop, tel_ptr);
-
     auto start_time = std::chrono::steady_clock::now();
     const double loop_dt = 0.004; 
     double prev_angles[4][3] = {0};
     
-    // Inicializamos ángulos previos
+    // Inicializamos ángulos previos con la postura actual para la derivada de velocidad
     for(int p=0; p<4; ++p) {
         for(int m=0; m<3; ++m) prev_angles[p][m] = shm_ptr->angles[p][m];
     }
@@ -135,12 +84,114 @@ int main() {
         double elapsed = std::chrono::duration<double>(t_now - start_time).count();
         
         bool tiempo_agotado = (elapsed > duracion_test);
-        bool todo_aterrizado = true; 
+        bool todo_aterrizado = true; // Empieza en true, si una pata está en el aire se vuelve false
         double global_phase = fmod(elapsed / step_duration, 1.0);
+
+        // ZMP 
+        double zmp_numerador_x = 0.0;
+        double zmp_numerador_y = 0.0;
+        double zmp_denominador = 0.0;
+        double zmp_desired_sum_x = 0.0;
+        double zmp_desired_sum_y = 0.0;
+        int patas_en_suelo = 0;
+
+        Eigen::Vector3d current_foot_pos_global[4];
+
+        for (int p = 0; p < 4; p++) {
+            double leg_phase = fmod(global_phase + gait_offsets[p], 1.0);
+            Eigen::Vector3d origin = LEGS_STAND_XYZ[p];
+            
+            // Calculamos proporciones de tiempo reales para el ZMP
+            double stance_portion = duty_factor;
+            double swing_portion = 1.0 - duty_factor;
+            bool stance = (leg_phase >= swing_portion);
+
+            TrajectoryPoint3D tp;
+            if (stance) {
+                double t = (leg_phase - swing_portion) / stance_portion;
+                double t_stance = step_duration * stance_portion;
+                Eigen::Vector3d v_total = Eigen::Vector3d(vx, vy, 0.0) + Eigen::Vector3d(0,0,wz).cross(HIP_OFFSETS[p]);
+                Eigen::Vector3d p_start = origin - v_total * (t_stance / 2.0);
+                Eigen::Vector3d p_target = origin + v_total * (t_stance / 2.0);
+                
+                tp.pos = p_target + t * (p_start - p_target);
+                tp.pos.z() = origin.z();
+            } else {
+                double t_stance = step_duration * stance_portion;
+                double t_swing = step_duration * swing_portion;
+                
+                tp = generate_bezier_swing(leg_phase, duty_factor, origin, HIP_OFFSETS[p], vx, vy, wz, 
+                                          t_stance, t_swing, step_h);
+            }
+            
+            // Actualizamos la posición global usando tp.pos que es un Vector3d
+            current_foot_pos_global[p] = HIP_OFFSETS[p] + tp.pos;
+            
+            bool c_i = contact_ptr->is_contact[p];
+            double Fz_i = contact_ptr->fz_r[p];
+            
+            if (c_i) {
+                zmp_numerador_x += Fz_i * current_foot_pos_global[p].x();
+                zmp_numerador_y += Fz_i * current_foot_pos_global[p].y();
+                zmp_denominador += Fz_i;
+
+                zmp_desired_sum_x += current_foot_pos_global[p].x();
+                zmp_desired_sum_y += current_foot_pos_global[p].y();
+                patas_en_suelo++;
+            }
+        }
+
+        double pxr = 0.0;
+        double pyr = 0.0;
+
+        if (zmp_denominador > 1e-5) {zmp_denominador += 1e-5;}
+
+        pxr = zmp_numerador_x / zmp_denominador;
+        pyr = zmp_numerador_y / zmp_denominador;
+
+        double pxd = 0.0;
+        double pyd = 0.0;
+
+        if (patas_en_suelo > 0) {
+            pxd = zmp_desired_sum_x / patas_en_suelo;
+            pyd = zmp_desired_sum_y / patas_en_suelo;
+        }
+
+        // Calcular la altura base del CoM como el promedio de la componente Z de las 4 patas
+        double z_sum = 0.0;
+        for (int i = 0; i < 4; ++i) {
+            z_sum += LEGS_STAND_XYZ[i].z();
+        }
+        double avg_stand_z = z_sum / 4.0;
+        
+        // Calcular h_com dinámico
+        double h_com = std::abs(avg_stand_z + target_body_pos.z());
+        double gyro_x_rad = imu_ptr->gyro[0] * M_PI / 180.0;
+        double gyro_y_rad = imu_ptr->gyro[1] * M_PI / 180.0;
+
+        double v_com_x = h_com * gyro_y_rad; 
+        double v_com_y = -h_com * gyro_x_rad;
+
+        // =========================================================
+        // ESQUELETO DE LA LEY DE CONTROL (PARA FUTURA IMPLEMENTACIÓN)
+        // =========================================================
+        double Kp_zmp = 0.1; // Ejemplo
+        double Kd_zmp = 0.05; // Ejemplo
+
+        double error_zmp_x = pxd - pxr;
+        double error_zmp_y = pyd - pyr;
+
+        // Ley PD: Posición deseada + Kp(Error Posición) + Kd(Error Velocidad)
+        double u_x = Kp_zmp *(pxd - pxr) - Kd_zmp * v_com_x;
+        double u_y = Kp_zmp *(pyd - pyr) - Kd_zmp * v_com_y;
+
+        //target_body_pos.x() = original_bx + u_x;
+        //target_body_pos.y() = original_by + u_y;
+        
 
         for (int p = 0; p < 4; p++) {
             
-            // --- ATERRIZAJE SUAVE ---
+            // --- ATERRIZAJE SUAVE: Si la pata ya terminó, congelarla ---
             if (leg_finished[p]) {
                 shm_ptr->desired_accel[p][0] = 0; shm_ptr->desired_accel[p][1] = 0; shm_ptr->desired_accel[p][2] = 0;
                 shm_ptr->is_stance[p] = true;
@@ -155,6 +206,7 @@ int main() {
                     shm_ptr->velocities[p][0] = 0.0; shm_ptr->velocities[p][1] = 0.0; shm_ptr->velocities[p][2] = 0.0;
                 }
                 
+                // Mantiene rigidez alta en la postura estática final
                 shm_ptr->kp_scale[p][0] = 1.0; shm_ptr->kd_scale[p][0] = 1.0;
                 shm_ptr->kp_scale[p][1] = 1.0; shm_ptr->kd_scale[p][1] = 1.0;
                 shm_ptr->kp_scale[p][2] = 1.0; shm_ptr->kd_scale[p][2] = 1.0;
@@ -164,39 +216,50 @@ int main() {
 
             // --- TRAYECTORIA NORMAL ---
             double leg_phase = fmod(global_phase + gait_offsets[p], 1.0);
-            bool stance = (leg_phase >= duty_factor); 
+            
+            // Calculamos proporciones de tiempo reales
+            double stance_portion = duty_factor;
+            double swing_portion = 1.0 - duty_factor;
+            
+            // Si la fase superó la porción de vuelo, la pata ya está en el suelo
+            bool stance = (leg_phase >= swing_portion); 
+            
             Eigen::Vector3d origin = LEGS_STAND_XYZ[p];
             TrajectoryPoint3D tp; 
 
             if (stance) {
-                double t = (leg_phase - 0.5) * 2.0;
+                // Normalizar 't' (0.0 a 1.0) para la fase de stance
+                double t = (leg_phase - swing_portion) / stance_portion;
+                
+                // Las velocidades y arrastres dependen de cuánto tiempo dura el stance
+                double t_stance = step_duration * stance_portion;
                 Eigen::Vector3d v_total = Eigen::Vector3d(vx, vy, 0.0) + Eigen::Vector3d(0,0,wz).cross(HIP_OFFSETS[p]);
-                Eigen::Vector3d p_start = origin - v_total * (step_duration / 4.0);
-                Eigen::Vector3d p_target = origin + v_total * (step_duration / 4.0);
+                
+                // p_start y p_target se separan según la distancia recorrida en ese t_stance
+                Eigen::Vector3d p_start = origin - v_total * (t_stance / 2.0);
+                Eigen::Vector3d p_target = origin + v_total * (t_stance / 2.0);
                 
                 tp.pos = p_target + t * (p_start - p_target);
                 tp.pos.z() = origin.z();
                 tp.acc = Eigen::Vector3d::Zero();
             } else {
-                tp = generate_bezier_swing(leg_phase, origin, HIP_OFFSETS[p], vx, vy, wz, 
-                                          step_duration/2.0, step_duration/2.0, step_h);
-            }
-
-            // --- ACTUALIZACIÓN PARA EL HILO DE MONITOREO ---
-            {
-                std::lock_guard<std::mutex> lock(g_pos_mutex);
-                g_pos_deseada_hilo[p] = tp.pos;
+                // Generador de Bézier con los tiempos y factor correctos
+                double t_stance = step_duration * stance_portion;
+                double t_swing = step_duration * swing_portion;
+                
+                tp = generate_bezier_swing(leg_phase, duty_factor, origin, HIP_OFFSETS[p], vx, vy, wz, 
+                                          t_stance, t_swing, step_h);
             }
 
             // --- GATILLO DE PARADA POR TIEMPO ---
             if (tiempo_agotado) {
                 if (stance) {
-                    final_foot_pos_3d[p] = tp.pos; 
+                    final_foot_pos_3d[p] = tp.pos; // Se guarda la posición donde tocó el suelo
                     leg_finished[p] = true; 
                     shm_ptr->is_stance[p] = true;
                     continue; 
                 } else {
-                    todo_aterrizado = false; 
+                    todo_aterrizado = false; // Hay una pata en el aire, no podemos romper el while
                 }
             }
 
@@ -208,6 +271,7 @@ int main() {
                 shm_ptr->angles[p][1] = ik.th2;
                 shm_ptr->angles[p][2] = ik.th3;
 
+                // Cálculo de velocidad con protección de pico inicial
                 if (!first_run) {
                     shm_ptr->velocities[p][0] = (ik.th1 - prev_angles[p][0]) / loop_dt;
                     shm_ptr->velocities[p][1] = (ik.th2 - prev_angles[p][1]) / loop_dt;
@@ -231,6 +295,7 @@ int main() {
             }
         }
 
+        // Romper el bucle SOLO si el tiempo se agotó Y las 4 patas tocaron el suelo
         if (tiempo_agotado && todo_aterrizado) break;
 
         first_run = false;
@@ -239,15 +304,8 @@ int main() {
     }
 
     // ============================================================
-    // FASE D: HOLD FINAL Y LIMPIEZA
+    // FASE D: HOLD FINAL (Post-Caminata con Postura)
     // ============================================================
-    
-    // Detener el hilo de monitoreo ordenadamente ANTES de soltar los motores
-    g_running = false;
-    if (monitor_thread.joinable()) {
-        monitor_thread.join();
-    }
-
     std::cout << "\n>> Ciclo terminado. Todas las patas aterrizadas de forma segura." << std::endl;
     std::cout << ">> MANTENIENDO POSTURA FINAL." << std::endl;
     std::cout << ">>> PRESIONA ENTER PARA FINALIZAR Y APAGAR <<<" << std::endl;
