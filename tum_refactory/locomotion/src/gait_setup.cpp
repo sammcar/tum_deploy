@@ -127,7 +127,7 @@ bool init_gait_posture(
 
     if (dont_ask) {
             // --- HARDCODEA AQUÍ TU POSTURA DE PRUEBA ---
-            in_bx = 0.0;     // Offset Cuerpo X (mm) [Adelante+]
+            in_bx = 35.0;     // Offset Cuerpo X (mm) [Adelante+]
             in_by = 0.0;     // Offset Cuerpo Y (mm) [Izq+]
             in_bz = 0.0;     // Offset Cuerpo Z (mm) [Abajo-]
             in_roll = 0.0;   // Roll (grados)

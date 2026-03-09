@@ -17,7 +17,8 @@ Eigen::Vector2d compute_zmp_offset(
     double step_h,
     double h_com,
     double Kp,
-    double Kd)
+    double Kd,
+    ZMPDebugData* debug_data)
 {
     // Si no hay hardware real, el ZMP no se puede calcular. Se asume movimiento perfecto.
     if (!require_real_hardware || contact_ptr == nullptr || imu_ptr == nullptr) {
@@ -89,15 +90,47 @@ Eigen::Vector2d compute_zmp_offset(
         pyd = zmp_desired_sum_y / patas_en_suelo;
     }
 
+    // --- NUEVO: DEADBAND (Zona Muerta) ---
+    double error_x = pxd - pxr;
+    double error_y = pyd - pyr;
+    double deadband_m = 0.004; // Umbral
+
+    // Si el error de ZMP es más pequeño que el umbral, consideramos que el error es 0.
+    if (std::abs(error_x) < deadband_m) error_x = 0.0;
+    if (std::abs(error_y) < deadband_m) error_y = 0.0;
+
     // 3. Obtener velocidades del CoM desde el giroscopio
     double gyro_x_rad = imu_ptr->gyro[0] * M_PI / 180.0;
     double gyro_y_rad = imu_ptr->gyro[1] * M_PI / 180.0;
     double v_com_x = h_com * gyro_y_rad; 
     double v_com_y = -h_com * gyro_x_rad;
 
-    // 4. Ley de Control PD
-    double u_x = Kp * (pxd - pxr) - Kd * v_com_x;
-    double u_y = Kp * (pyd - pyr) - Kd * v_com_y;
+   // 4. Ley de Control PD (¡Corregido para usar error_x y error_y del deadband!)
+    double kp_term_x = Kp * error_x;
+    double kd_term_x = Kd * v_com_x;
+    double u_x_raw = kp_term_x - kd_term_x;
 
-    return Eigen::Vector2d(u_x, u_y);
+    double kp_term_y = Kp * error_y;
+    double kd_term_y = Kd * v_com_y;
+    double u_y_raw = kp_term_y - kd_term_y;
+
+    // --- FILTRO EMA (Exponential Moving Average) ---
+    static double u_x_filtered = 0.0;   
+    static double u_y_filtered = 0.0;
+    double alpha = 0.09; 
+
+    u_x_filtered = (alpha * u_x_raw) + ((1.0 - alpha) * u_x_filtered);
+    u_y_filtered = (alpha * u_y_raw) + ((1.0 - alpha) * u_y_filtered);
+
+    // --- NUEVO: Exportar datos al buzón si se solicitó ---
+    if (debug_data != nullptr) {
+        debug_data->u_x_filtered = u_x_filtered;
+        debug_data->u_y_filtered = u_y_filtered;
+        debug_data->kp_term_x = kp_term_x;
+        debug_data->kd_term_x = kd_term_x;
+        debug_data->kp_term_y = kp_term_y;
+        debug_data->kd_term_y = kd_term_y;
+    }
+
+    return Eigen::Vector2d(u_x_filtered, u_y_filtered);
 }

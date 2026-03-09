@@ -4,6 +4,17 @@
 #include "robot_types.hpp"
 #include <Eigen/Dense>
 
+
+// --- NUEVO: Estructura para extraer datos internos ---
+struct ZMPDebugData {
+    double u_x_filtered = 0.0;
+    double u_y_filtered = 0.0;
+    double kp_term_x = 0.0;
+    double kd_term_x = 0.0;
+    double kp_term_y = 0.0;
+    double kd_term_y = 0.0;
+};
+
 /**
  * @brief Calcula el desplazamiento (offset) del Centro de Masa (CoM) para corregir el ZMP.
  * * @param require_real_hardware Booleano para saber si hay hardware (si es false, retorna 0,0).
@@ -33,7 +44,8 @@ Eigen::Vector2d compute_zmp_offset(
     double step_h,
     double h_com,
     double Kp,
-    double Kd
+    double Kd,
+    ZMPDebugData* debug_data = nullptr // <--- NUEVO (Es opcional)
 );
 
 #endif // ZMP_CONTROL_HPP

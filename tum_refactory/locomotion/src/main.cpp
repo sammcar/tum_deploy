@@ -1,4 +1,5 @@
 #include <iostream>
+#include <iomanip>
 #include <vector>
 #include <chrono>
 #include <thread>
@@ -77,7 +78,7 @@ int main() {
     std::cin.get();
 
     auto start_time = std::chrono::steady_clock::now();
-    const double loop_dt = 0.004; 
+    const double loop_dt = 0.005; 
     double prev_angles[4][3] = {0};
     
     // Inicializamos ángulos previos con la postura actual para la derivada de velocidad
@@ -89,6 +90,25 @@ int main() {
     bool leg_finished[4] = {false, false, false, false};
     Eigen::Vector3d final_foot_pos_3d[4];
     Eigen::Vector3d base_body_pos = target_body_pos;
+
+    bool enable_zmp_debug = true; // Cámbialo a false para silenciar
+    ZMPDebugData zmp_debug_info;
+
+    // Lanzar el hilo dedicado a imprimir
+    std::thread debug_thread([&]() {
+        while (g_running) {
+            if (enable_zmp_debug) {
+                std::cout << std::fixed << std::setprecision(4)
+                          << "[ZMP] Ux: " << zmp_debug_info.u_x_filtered
+                          << " | Uy: " << zmp_debug_info.u_y_filtered
+                          << " || Kp_errX: " << zmp_debug_info.kp_term_x
+                          << " | Kd_velX: " << zmp_debug_info.kd_term_x 
+                          << " | Kp_errY: " << zmp_debug_info.kp_term_y
+                          << " | Kd_velY: " << zmp_debug_info.kd_term_y << std::endl;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(3));
+        }
+    });
 
     // ============================================================
     // FASE C: BUCLE DINÁMICO DE MARCHA
@@ -109,7 +129,7 @@ int main() {
         // Llamar al módulo de control
         Eigen::Vector2d u_zmp = compute_zmp_offset(require_real_hardware, contact_ptr, imu_ptr, global_phase, 
                                                    gait_offsets, duty_factor, step_duration, vx, vy, wz, step_h, 
-                                                   h_com, Kp_zmp, Kd_zmp);
+                                                   h_com, Kp_zmp, Kd_zmp, &zmp_debug_info);
 
         // Sumar el offset calculado a la postura base configurada en Fase B
         target_body_pos.x() = base_body_pos.x() + u_zmp.x();
@@ -229,6 +249,9 @@ int main() {
         std::this_thread::sleep_until(t_now + std::chrono::duration<double>(loop_dt));
     }
 
+    enable_zmp_debug = false; 
+    std::cout << "\n";
+
     // ============================================================
     // FASE D: HOLD FINAL (Post-Caminata con Postura)
     // ============================================================
@@ -257,6 +280,12 @@ int main() {
     // Limpieza final de la memoria
     std::memset(shm_ptr, 0, sizeof(CommandData));
     shm_ptr->is_walking = false; 
+
+    g_running = false;
+    // --- NUEVO: Esperar a que el hilo termine ---
+    if (debug_thread.joinable()) {
+        debug_thread.join();
+    }
     
     std::cout << "\n✅ Finalizado. Robot en posición segura." << std::endl;
 

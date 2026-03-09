@@ -49,7 +49,7 @@ const double L2 = 0.147;
 const double L3 = 0.230;
 
 // Umbrales de contacto en Newtons para cada pata [FL, FR, BL, BR]
-const double fz_u[4] = {5.0, 7.0, 4.5, 10.0};       // BASE DEL UMBRAL (Corregido a 4.0 para que escale)
+const double fz_u[4] = {5.0, 7.0, 5.0, 10.0};       // BASE DEL UMBRAL (Corregido a 4.0 para que escale)
 const double gain_vz[4] = {1.5, 1.5, 1.5, 1.5};    // GANANCIA DE INERCIA
 const double fz_u_max[4] = {35.0, 35.0, 35.0, 35.0}; // LÍMITE MÁXIMO DEL UMBRAL
 
@@ -148,9 +148,10 @@ int main() {
     double fz_anterior[4] = {0.0, 0.0, 0.0, 0.0};
     bool estado_contacto[4] = {false, false, false, false};
     double escudo_memoria[4] = {0.0, 0.0, 0.0, 0.0};
+    double fz_filtrado_memoria[4] = {0.0, 0.0, 0.0, 0.0};
 
     int contador_pisando[4] = {0, 0, 0, 0};
-    const int CICLOS_CONFIRMACION = 8; // 5 ciclos * 4ms = 20ms de validación
+    const int CICLOS_CONFIRMACION = 8; // 8 ciclos * 4ms = 32ms de validación
 
     while (g_running) {
         next_cycle += CYCLE_TIME;
@@ -187,7 +188,11 @@ int main() {
             // Calcular las fuerzas (X, Y, Z) y Velocidades Lineales
             LegForces state = ComputeForcesFromTorques(q1, q2, q3, dq1, dq2, dq3, t1, t2, t3, L1, L2, L3, is_right);
             
-            fz_medido[p] = std::abs(state.fz);
+            double fz_crudo = std::abs(state.fz);
+
+            double alpha_fz = 0.4; 
+            fz_filtrado_memoria[p] = (alpha_fz * fz_crudo) + ((1.0 - alpha_fz) * fz_filtrado_memoria[p]);
+            fz_medido[p] = fz_filtrado_memoria[p]; // Toda tu lógica de estados usará la señal limpia
             vz_medido[p][0] = state.vz; 
             vx_medido[p][1] = state.vx;
             vy_medido[p][2] = state.vy;
