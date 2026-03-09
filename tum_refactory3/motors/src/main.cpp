@@ -738,11 +738,7 @@ void control_robot(std::shared_ptr<mjbots::moteus::Transport> transport,
                 coxa_j->setPosition(0, real.angulos_rad(0));
                 femur_j->setPosition(0, real.angulos_rad(1));
                 tibia_j->setPosition(0, real.angulos_rad(2));
-                
-                coxa_j->setVelocity(0, real.velocidades_rad_s(0));
-                femur_j->setVelocity(0, real.velocidades_rad_s(1));
-                tibia_j->setVelocity(0, real.velocidades_rad_s(2));
-                
+            
                 pie_node->getSkeleton()->computeForwardKinematics(); // Refrescar el modelo
 
                 // --- 5. CÁLCULO DEL ORÁCULO DART ---
@@ -758,7 +754,7 @@ void control_robot(std::shared_ptr<mjbots::moteus::Transport> transport,
 
                 //¡Recuerda descomentar esto cuando vayas a probar los torques reales!
                 patas[p].coxa.ff_torque = m_cmd.torques_Nm(0);
-                patas[p].femur.ff_torque = -1*m_cmd.torques_Nm(1);
+                patas[p].femur.ff_torque = m_cmd.torques_Nm(1);
                 patas[p].tibia.ff_torque = m_cmd.torques_Nm(2);
                 
                 const double MAX_FF_TORQUE = 3.5;
@@ -786,7 +782,7 @@ void control_robot(std::shared_ptr<mjbots::moteus::Transport> transport,
         update_telemetry(rx_frames, patas, memory);
 
         // 5. Sincronización 1000Hz
-        proximo_ciclo += std::chrono::milliseconds(2);
+        proximo_ciclo += std::chrono::milliseconds(1);
         std::this_thread::sleep_until(proximo_ciclo);
     }
 }
