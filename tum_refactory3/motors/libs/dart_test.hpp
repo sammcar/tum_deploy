@@ -13,7 +13,7 @@ using Eigen::Vector3d;
 // --- 1. CONSTANTES GLOBALES (Default) ---
 // Nota: Se definen como 'inline' para evitar errores de redefinición
 inline Vector3d kd_base{0.1, 0.1, 0.1}; //inline Vector3d kd_base{2.0, 2.0, 5.0};
-inline Vector3d kp_base{0.0, 0.0, 0.0}; //inline Vector3d kp_base{500.0, 500.0, 200.0}; 
+inline Vector3d kp_base{1.0, 1.0, 1.0}; //inline Vector3d kp_base{500.0, 500.0, 200.0}; 
 inline double masa_pierna_def = 1.0;
 
 // --- 2. ESTRUCTURAS ---
