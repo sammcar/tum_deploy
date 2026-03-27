@@ -1,0 +1,26 @@
+common --noenable_bzlmod
+build --noincompatible_enable_cc_toolchain_resolution
+
+build --crosstool_top=@rpi_bazel//tools/cc_toolchain:toolchain
+build --define CLANG=true
+
+# Sadly, Eigen/C++ still hasn't figured out how to reliably get
+# alignment correct.  Lets just disable it for now.
+build --copt -DEIGEN_DONT_ALIGN_STATICALLY
+
+build:pi --cpu=armeabihf
+build:pi --define COM_GITHUB_MJBOTS_RASPBERRYPI=1
+
+build --strip=never
+build --compiler=clang
+
+build -c opt
+build --copt -D_FILE_OFFSET_BITS=64
+build --copt -D_LARGEFILE_SOURCE
+build --copt -D_LARGEFILE64_SOURCE
+
+test --test_output=errors
+
+build --workspace_status_command=tools/workspace_status.sh
+
+build --stamp

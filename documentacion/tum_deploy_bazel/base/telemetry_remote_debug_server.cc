@@ -1,0 +1,150 @@
+
+#include "telemetry_remote_debug_server.h"
+
+#include <boost/asio/post.hpp>
+
+#include "mjlib/base/json5_read_archive.h"
+#include "mjlib/base/json5_write_archive.h"
+#include "mjlib/base/fail.h"
+
+namespace mjmech {
+namespace base {
+class TelemetryRemoteDebugServer::Impl : boost::noncopyable {
+ public:
+  Impl(const boost::asio::any_io_executor& executor)
+      : executor_(executor),
+        socket_(executor) {}
+
+  void StartRead() {
+    socket_.async_receive_from(
+        boost::asio::buffer(receive_buffer_),
+        receive_endpoint_,
+        std::bind(&Impl::HandleRead, this,
+                  std::placeholders::_1,
+                  std::placeholders::_2));
+  }
+
+  void HandleRead(mjlib::base::error_code ec, std::size_t size) {
+    mjlib::base::FailIf(ec);
+
+    std::string data(receive_buffer_, size);
+    udp::endpoint from = receive_endpoint_;
+
+    StartRead();
+
+    HandleData(data, from);
+  }
+
+  struct Message {
+    std::string command;
+    std::vector<std::string> names;
+
+    template <typename Archive>
+    void Serialize(Archive* a) {
+      a->Visit(MJ_NVP(command));
+      a->Visit(MJ_NVP(names));
+    }
+  };
+
+  void HandleData(const std::string& data, const udp::endpoint& from) {
+    const auto message = mjlib::base::Json5ReadArchive::Read<Message>(data);
+
+    if (message.command == "enumerate") {
+      DoEnumerate(from);
+    } else if (message.command == "get") {
+      DoGet(message, from);
+    } else {
+      std::cerr << "unknown remote debug command: '"
+                << message.command << "'\n";
+    }
+  }
+
+  struct EnumerateResponse {
+    std::string type = "enumerate";
+    std::vector<std::string> names;
+
+    template <typename Archive>
+    void Serialize(Archive* a) {
+      a->Visit(MJ_NVP(type));
+      a->Visit(MJ_NVP(names));
+    }
+  };
+
+  void DoEnumerate(const udp::endpoint& from) {
+    EnumerateResponse response;
+    for (const auto& pair: handlers_) { response.names.push_back(pair.first); }
+
+    SendData(mjlib::base::Json5WriteArchive::Write(response), from);
+  }
+
+  void SendData(const std::string& data,
+                const udp::endpoint& endpoint) {
+    std::shared_ptr<std::string> shared_data(new std::string(data));
+    socket_.async_send_to(boost::asio::buffer(*shared_data),
+                          endpoint,
+                          std::bind(&Impl::HandleWrite, this, shared_data,
+                                    std::placeholders::_1));
+  }
+
+  void DoGet(const Message& message,
+             const udp::endpoint& from) {
+    for (const auto& name : message.names) {
+      auto it = handlers_.find(name);
+      if (it == handlers_.end()) {
+        std::cerr << "request for unknown name: '" + name + "'\n";
+        continue;
+      }
+
+      it->second->Respond(from);
+    }
+  }
+
+  void HandleWrite(std::shared_ptr<std::string>,
+                   mjlib::base::error_code ec) {
+    mjlib::base::FailIf(ec);
+  }
+
+  boost::asio::any_io_executor executor_;
+  Parameters parameters_;
+  udp::socket socket_;
+  char receive_buffer_[3000] = {};
+  udp::endpoint receive_endpoint_;
+
+  std::map<std::string, std::unique_ptr<Handler> > handlers_;
+};
+
+TelemetryRemoteDebugServer::TelemetryRemoteDebugServer(
+    const boost::asio::any_io_executor& executor)
+    : impl_(new Impl(executor)) {}
+
+TelemetryRemoteDebugServer::~TelemetryRemoteDebugServer() {}
+
+TelemetryRemoteDebugServer::Parameters*
+TelemetryRemoteDebugServer::parameters() {
+  return &impl_->parameters_;
+}
+
+void TelemetryRemoteDebugServer::AsyncStart(mjlib::io::ErrorCallback handler) {
+  impl_->socket_.open(udp::v4());
+  udp::endpoint endpoint(udp::v4(), impl_->parameters_.port);
+  impl_->socket_.bind(endpoint);
+  impl_->StartRead();
+
+  boost::asio::post(
+      impl_->executor_,
+      std::bind(std::move(handler), mjlib::base::error_code()));
+}
+
+void TelemetryRemoteDebugServer::RegisterHandler(
+    const std::string& name,
+    std::unique_ptr<Handler> handler) {
+  impl_->handlers_.insert(std::make_pair(name, std::move(handler)));
+}
+
+void TelemetryRemoteDebugServer::SendResponse(
+    const std::string& data,
+    const udp::endpoint& endpoint) {
+  impl_->SendData(data, endpoint);
+}
+}
+}
