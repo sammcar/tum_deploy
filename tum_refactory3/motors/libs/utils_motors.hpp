@@ -21,7 +21,7 @@ void inicializar_robot(Leg patas[4],
             // Configuración de software por defecto
             motores_pata[m]->kp = 1.0;
             motores_pata[m]->kd = 1.0;
-            motores_pata[m]->accel_lim = 5.0;
+            motores_pata[m]->accel_lim = 20.0;
             motores_pata[m]->max_trq = 3.0;
             motores_pata[m]->target_pos = 0.0;
             motores_pata[m]->target_vel = 0.0;

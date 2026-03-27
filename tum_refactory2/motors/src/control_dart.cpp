@@ -1,57 +1,36 @@
-#ifndef CONTROL_DART_HPP
-#define CONTROL_DART_HPP
-
-#include <dart/dart.hpp>
+#include "control_dart.hpp" // Incluye el menú que acabamos de crear
 #include <iostream>
 #include <cmath>
-#include <Eigen/Dense>
 
-using namespace dart::dynamics;
-using Eigen::Vector3d;
+// --- 1. INICIALIZACIÓN DE CONSTANTES GLOBALES ---
+// Aquí se les asigna su valor real en memoria.
+Vector3d kd_base{1.0, 1.0, 2.0}; 
+Vector3d kp_base{200.0, 200.0, 400.0}; 
+double masa_pierna_def = 1.4;
 
 
-// --- 1. CONSTANTES GLOBALES (Default) ---
-// Nota: Se definen como 'inline' para evitar errores de redefinición
-inline Vector3d kd_base{8.0, 8.0, 9.0}; //inline Vector3d kd_base{2.0, 2.0, 5.0};
-inline Vector3d kp_base{800.0, 800.0, 400.0}; //inline Vector3d kp_base{500.0, 500.0, 200.0}; 
-inline double masa_pierna_def = 1.4;
+// --- 2. IMPLEMENTACIÓN DE FUNCIONES ---
 
-// --- 2. ESTRUCTURAS ---
-struct EstadoRealMotores {
-    Vector3d angulos_rad;
-    Vector3d velocidades_rad_s;
-};
 
-struct EstadoDeseadoCartesiano {
-    Vector3d posicion;
-    Vector3d velocidad;
-    Vector3d aceleracion;
-    double stance_actual = 0.0;
-    double kp_scale = 1.0;
-    double kd_scale = 1.0;
-};
-
-struct ComandosMotor {
-    Vector3d velocidades_rad_s;
-    Vector3d torques_Nm;
-};
-
-struct LegDimensions {
-    Vector3d shoulder_offset = {0.0, 0.093, 0.0}; 
-    Vector3d femur_len = {0.0, 0.0, -0.147};      
-    Vector3d tibia_len = {0.0, 0.0, -0.230};      
-};
-
-inline SkeletonPtr CreateLegSkeleton(const LegDimensions& dims) {
-    SkeletonPtr skel = Skeleton::create("pata_TUM");
+// --- NUEVO CREADOR PRINCIPAL ---
+SkeletonPtr CreateLegSkeleton(const LegDimensions& dims, bool is_right) {
+    SkeletonPtr skel = Skeleton::create(is_right ? "pata_derecha" : "pata_izquierda");
     skel->setGravity(Vector3d(0, 0, 0)); 
+
+    // --- CORRECCIÓN CRÍTICA: FACTOR DE SIMETRÍA ---
+    // Si es derecha, invertimos el eje Y para el montaje
+    double y_sign = is_right ? -1.0 : 1.0;
 
     // 1. SHOULDER (Coxa)
     RevoluteJoint::Properties s_props;
     s_props.mName = "shoulder_joint";
     s_props.mAxis = Vector3d::UnitX(); 
-    // La articulación está en (0,0,0). El centro del hombro está hacia +Y.
-    s_props.mT_ChildBodyToJoint.translation() = -dims.shoulder_offset;
+    
+    // Aplicamos el espejo al offset del hombro
+    Vector3d actual_shoulder_offset = dims.shoulder_offset;
+    actual_shoulder_offset.y() *= y_sign; 
+    s_props.mT_ChildBodyToJoint.translation() = -actual_shoulder_offset;
+    
     auto [shoulder_joint, shoulder_body] = skel->createJointAndBodyNodePair<RevoluteJoint>(
         nullptr, s_props, BodyNode::AspectProperties("shoulder"));
     shoulder_body->setMass(0.01);
@@ -59,13 +38,10 @@ inline SkeletonPtr CreateLegSkeleton(const LegDimensions& dims) {
     // 2. FEMUR
     RevoluteJoint::Properties f_props;
     f_props.mName = "femur_joint";
-    f_props.mAxis = -Vector3d::UnitY(); 
+    // Espejo en el eje de rotación: izquierda usa -Y, derecha usa +Y
+    f_props.mAxis = (is_right ? 1.0 : -1.0) * Vector3d::UnitY();
     
-    // Nace exactamente en el centro del BodyNode del hombro
     f_props.mT_ParentBodyToJoint = Eigen::Isometry3d::Identity(); 
-    
-    // El fémur crece hacia -Z. Por lo tanto, la articulación (vista desde el fémur) 
-    // está en sentido contrario (+Z). Usamos directamente la traslación pura.
     f_props.mT_ChildBodyToJoint.translation() = -dims.femur_len; 
 
     auto [femur_joint, femur_body] = skel->createJointAndBodyNodePair<RevoluteJoint>(
@@ -75,12 +51,10 @@ inline SkeletonPtr CreateLegSkeleton(const LegDimensions& dims) {
     // 3. TIBIA
     RevoluteJoint::Properties t_props;
     t_props.mName = "tibia_joint";
-    t_props.mAxis = -Vector3d::UnitY(); 
+    // Espejo en el eje de rotación: izquierda usa -Y, derecha usa +Y
+    t_props.mAxis = (is_right ? 1.0 : -1.0) * Vector3d::UnitY();
     
-    // Nace exactamente al final del fémur
     t_props.mT_ParentBodyToJoint = Eigen::Isometry3d::Identity();
-    
-    // La tibia crece hacia -Z.
     t_props.mT_ChildBodyToJoint.translation() = -dims.tibia_len;
 
     auto [tibia_joint, tibia_body] = skel->createJointAndBodyNodePair<RevoluteJoint>(
@@ -91,7 +65,6 @@ inline SkeletonPtr CreateLegSkeleton(const LegDimensions& dims) {
     WeldJoint::Properties foot_props;
     foot_props.mName = "foot_joint";
     
-    // El pie se suelda rígidamente al final de la tibia sin desplazamientos
     foot_props.mT_ParentBodyToJoint = Eigen::Isometry3d::Identity();
     foot_props.mT_ChildBodyToJoint = Eigen::Isometry3d::Identity();
     
@@ -102,16 +75,9 @@ inline SkeletonPtr CreateLegSkeleton(const LegDimensions& dims) {
     return skel;
 }
 
-struct EstadoCartesianoReal {
-    Vector3d posicion;
-    Vector3d velocidad;
-};
-
-inline EstadoCartesianoReal calcular_FK_estado(
-    Joint* coxa, Joint* femur, Joint* tibia, BodyNode* pie_node, 
-    const Vector3d& angulos_rad, const Vector3d& velocidades_rad_s) 
+EstadoCartesianoReal calcular_FK_estado(Joint* coxa, Joint* femur, Joint* tibia, BodyNode* pie_node, 
+                                        const Vector3d& angulos_rad, const Vector3d& velocidades_rad_s) 
 {
-    // 1. Establecer el estado completo del motor (Ángulos Y Velocidades)
     coxa->setPosition(0, angulos_rad(0));
     femur->setPosition(0, angulos_rad(1));
     tibia->setPosition(0, angulos_rad(2));
@@ -120,44 +86,41 @@ inline EstadoCartesianoReal calcular_FK_estado(
     femur->setVelocity(0, velocidades_rad_s(1));
     tibia->setVelocity(0, velocidades_rad_s(2));
 
-    // (Opcional pero recomendado: Asegurar que las fuerzas estén en cero para esta lectura)
     coxa->setForce(0, 0.0);
     femur->setForce(0, 0.0);
     tibia->setForce(0, 0.0);
 
-    // 2. Actualizar DART una sola vez (como en las fuentes originales)
     auto skeleton = pie_node->getSkeleton();
     skeleton->computeForwardKinematics();
     skeleton->computeForwardDynamics();
 
-    // 3. Extraer los datos reales
     EstadoCartesianoReal resultado;
-    resultado.posicion = pie_node->getCOM(); // Reemplazo de getTransform().translation()
+    resultado.posicion = pie_node->getCOM(); 
     resultado.velocidad = pie_node->getCOMLinearVelocity();
 
     return resultado;
 }
 
-inline Vector3d calcular_F_P(const Vector3d& pos_deseada, const Vector3d& pos_real, const Vector3d& Kp) {
+Vector3d calcular_F_P(const Vector3d& pos_deseada, const Vector3d& pos_real, const Vector3d& Kp) {
     return Kp.cwiseProduct(pos_deseada - pos_real);
 }
 
-inline Vector3d calcular_F_D(const Vector3d& vel_deseada, const Vector3d& vel_real, const Vector3d& Kd) {
+Vector3d calcular_F_D(const Vector3d& vel_deseada, const Vector3d& vel_real, const Vector3d& Kd) {
     return Kd.cwiseProduct(vel_deseada - vel_real);
 }
 
-inline Vector3d calcular_F_accel(const Vector3d& accel_deseada, double mp, double mc, double fa, double es) {
+Vector3d calcular_F_accel(const Vector3d& accel_deseada, double mp, double mc, double fa, double es) {
     double masa_dinamica = mp + es * ((mc * fa) - mp);
-    return accel_deseada * masa_dinamica;
+    Vector3d gravedad_compensacion(0.0, 0.0, 9.81); 
+    Vector3d accel_total = accel_deseada + gravedad_compensacion;
+    return accel_total * masa_dinamica;
 }
 
-inline Eigen::Matrix3d calcular_jacobiano_lineal(BodyNode* pie_node) {
-    // Se invoca directamente sobre el nodo del pie. 
-    // DART ya devuelve una matriz de 3x3 basada en las 3 articulaciones.
+Eigen::Matrix3d calcular_jacobiano_lineal(BodyNode* pie_node) {
     return pie_node->getLinearJacobian(); 
 }
 
-inline Eigen::Matrix3d calcular_jacobiano_fuerza(SkeletonPtr pata, Joint* coxa, Joint* femur, Joint* tibia, BodyNode* pie_node) {
+Eigen::Matrix3d calcular_jacobiano_fuerza(SkeletonPtr pata, Joint* coxa, Joint* femur, Joint* tibia, BodyNode* pie_node) {
     Eigen::Matrix3d J_fuerza;
     coxa->setForce(0, 0.0); femur->setForce(0, 0.0); tibia->setForce(0, 0.0);
     pata->computeForwardDynamics();
@@ -179,50 +142,39 @@ inline Eigen::Matrix3d calcular_jacobiano_fuerza(SkeletonPtr pata, Joint* coxa, 
     return J_fuerza;
 }
 
-// --- 4. FUNCIÓN MAESTRA CORREGIDA ---
-inline ComandosMotor calcular_comandos_motores(
-    SkeletonPtr pata, Joint* coxa, Joint* femur, Joint* tibia, BodyNode* pie_node,
-    const EstadoRealMotores& real, const EstadoDeseadoCartesiano& deseado)
+ComandosMotor calcular_comandos_motores(SkeletonPtr pata, Joint* coxa, Joint* femur, Joint* tibia, BodyNode* pie_node,
+                                        const EstadoRealMotores& real, const EstadoDeseadoCartesiano& deseado)
 {
-    // [!] 2. OBTENER EL ESTADO CARTESIANO DE UNA SOLA VEZ
     EstadoCartesianoReal estado_real = calcular_FK_estado(coxa, femur, tibia, pie_node, real.angulos_rad, real.velocidades_rad_s);
     Vector3d pos_real = estado_real.posicion;
     Vector3d vel_real = estado_real.velocidad;
 
-    // --- CÁLCULO DE LA FUERZA DESEADA (Impedancia) ---
     Vector3d Kp_final = kp_base * deseado.kp_scale;
     Vector3d Kd_final = kd_base * deseado.kd_scale;
 
-    // [!] 3. CORRECCIÓN DE SINTAXIS: Faltaba llamar a la función calcular_F_P
     Vector3d F_P = calcular_F_P(deseado.posicion, pos_real, Kp_final);
     Vector3d F_D = calcular_F_D(deseado.velocidad, vel_real, Kd_final);
     Vector3d F_accel = calcular_F_accel(deseado.aceleracion, masa_pierna_def, 8.0, 0.5, deseado.stance_actual);
     
     Vector3d fuerza_total = F_P + F_D + F_accel;
 
-    // [!] 4. EL LIENZO EN BLANCO: Congelar la dinámica para aislar los Jacobianos
     coxa->setVelocity(0, 0.0);
     femur->setVelocity(0, 0.0);
     tibia->setVelocity(0, 0.0);
 
-    // [!] También DEBES forzar los torques a cero para evitar que fuerzas pasadas contaminen
     coxa->setForce(0, 0.0);
     femur->setForce(0, 0.0);
     tibia->setForce(0, 0.0);
 
     pata->computeForwardKinematics(); 
-    pata->computeForwardDynamics(); // [!] Refrescar dinámicas para borrar inercias y fuerzas centrífugas
+    pata->computeForwardDynamics(); 
 
-    // --- EXTRAER LOS JACOBIANOS ---
     Eigen::Matrix3d J_lineal = calcular_jacobiano_lineal(pie_node);
     Eigen::Matrix3d J_fuerza = calcular_jacobiano_fuerza(pata, coxa, femur, tibia, pie_node);
 
-    // --- TRADUCIR A MOTORES ---
     ComandosMotor comandos;
     comandos.velocidades_rad_s = J_lineal.inverse() * deseado.velocidad;
-    comandos.torques_Nm = (J_fuerza.inverse() * fuerza_total) * 1e-6; // [!] Compensación de masa aplicada correctamente
+    comandos.torques_Nm = (J_fuerza.inverse() * fuerza_total) * 1e-6; 
 
     return comandos;
 }
-
-#endif // CONTROL_DART_HPP

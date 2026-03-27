@@ -20,7 +20,7 @@
 SharedTelemetry global_telemetry;
 std::atomic<bool> g_running{true};
 
-const bool kSchizoMode = false;
+const bool kSchizoMode = true;
 const double kSchizoThresholdDeg = 100.0;
 const double kStallTorqueThreshold = 3.0;
 const double kStallVelThreshold = 0.1;
@@ -144,7 +144,7 @@ int main(int argc, char **argv)
             double pos = CalculateMinimumJerk(elapsed, homing_duration, motor_states[id].current_pos, 0.0);
             mjbots::moteus::PositionMode::Command cmd;
             cmd.position = pos;
-            cmd.kp_scale = 0.5;
+            cmd.kp_scale = 60.0;
             cmd.kd_scale = 0.5;
             cmd.maximum_torque = 1.5;
             send_frames.push_back(c->MakePosition(cmd));
@@ -222,8 +222,8 @@ int main(int argc, char **argv)
             double cmd_pos_rev = 0.0;
             double cmd_vel_rev_s = 0.0;
             double cmd_torque_nm = 0.0;
-            double cmd_kp_scale = 1.0;
-            double cmd_kd_scale = 1.0;
+            double cmd_kp_scale = 80.0;
+            double cmd_kd_scale = 80.0;
 
             if (is_walking_mode)
             {
