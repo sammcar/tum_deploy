@@ -1,0 +1,1693 @@
+<?xml version="1.0" ?>
+<!-- Generated using onshape-to-robot -->
+<!-- Onshape https://cad.onshape.com/documents/e14b699288ecde6d5160085a/w/c9dd75635be1de184e87af67/e/f917a93a93c3d3b7e50fe75d -->
+<robot name="TUM_URDF">
+  <!-- Link body_subasm -->
+  <link name="body_subasm">
+    <inertial>
+      <origin xyz="-0.114734 -0.144795 -0.101555" rpy="0 0 0"/>
+      <mass value="5.51512"/>
+      <inertia ixx="0.057704" ixy="6.25863e-06" ixz="1.49834e-06" iyy="0.0366101" iyz="-0.000628604" izz="0.0800987"/>
+    </inertial>
+    <!-- Part part_1 -->
+    <visual>
+      <origin xyz="-0.0547433 0.10649 -0.165335" rpy="0 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1.stl"/>
+      </geometry>
+      <material name="part_1_material">
+        <color rgba="0.4 0.4 0.4 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.0547433 0.10649 -0.165335" rpy="0 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part altavoz -->
+    <visual>
+      <origin xyz="-0.216047 -0.14306 -0.0530731" rpy="-0.523599 0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/altavoz.stl"/>
+      </geometry>
+      <material name="altavoz_material">
+        <color rgba="0.615686 0.811765 0.929412 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.216047 -0.14306 -0.0530731" rpy="-0.523599 0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/altavoz.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_2 -->
+    <visual>
+      <origin xyz="-0.114743 -0.0482603 -0.149085" rpy="-0 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__2.stl"/>
+      </geometry>
+      <material name="part_1_2_material">
+        <color rgba="0.615686 0.811765 0.929412 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 -0.0482603 -0.149085" rpy="-0 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__2.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_3 -->
+    <visual>
+      <origin xyz="-0.174743 0.10649 -0.165335" rpy="0 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1.stl"/>
+      </geometry>
+      <material name="part_1_3_material">
+        <color rgba="0.4 0.4 0.4 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.174743 0.10649 -0.165335" rpy="0 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_4 -->
+    <visual>
+      <origin xyz="-0.0147427 -0.0302603 -0.100335" rpy="3.14159 0.551662 -3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+      <material name="part_1_4_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.0147427 -0.0302603 -0.100335" rpy="3.14159 0.551662 -3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_5 -->
+    <visual>
+      <origin xyz="-0.114743 -0.14306 -0.0418351" rpy="0 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__4.stl"/>
+      </geometry>
+      <material name="part_1_5_material">
+        <color rgba="0.615686 0.811765 0.929412 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 -0.14306 -0.0418351" rpy="0 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__4.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_6 -->
+    <visual>
+      <origin xyz="-0.214744 -0.25536 -0.100335" rpy="3.14159 0.551662 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+      <material name="part_1_6_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.214744 -0.25536 -0.100335" rpy="3.14159 0.551662 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_7 -->
+    <visual>
+      <origin xyz="-0.174743 0.10649 -0.0353351" rpy="3.14159 -0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1.stl"/>
+      </geometry>
+      <material name="part_1_7_material">
+        <color rgba="0.4 0.4 0.4 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.174743 0.10649 -0.0353351" rpy="3.14159 -0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part acople_new -->
+    <visual>
+      <origin xyz="-0.214744 -0.11536 -0.100335" rpy="1.5708 0.626436 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new.stl"/>
+      </geometry>
+      <material name="acople_new_material">
+        <color rgba="0.231373 0.380392 0.705882 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.214744 -0.11536 -0.100335" rpy="1.5708 0.626436 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_8 -->
+    <visual>
+      <origin xyz="-0.114743 -0.0934103 -0.165335" rpy="-0 0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__5.stl"/>
+      </geometry>
+      <material name="part_1_8_material">
+        <color rgba="1 0 0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 -0.0934103 -0.165335" rpy="-0 0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__5.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_9 -->
+    <visual>
+      <origin xyz="-0.114743 -0.38036 -0.165335" rpy="-0 -0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__6.stl"/>
+      </geometry>
+      <material name="part_1_9_material">
+        <color rgba="1 0 0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 -0.38036 -0.165335" rpy="-0 -0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__6.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part bateria -->
+    <visual>
+      <origin xyz="-0.114702 -0.14361 -0.149185" rpy="0 -0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/bateria.stl"/>
+      </geometry>
+      <material name="bateria_material">
+        <color rgba="0.513725 0.737255 0.407843 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114702 -0.14361 -0.149185" rpy="0 -0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/bateria.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part base_conector -->
+    <visual>
+      <origin xyz="-0.114743 -0.39351 -0.100335" rpy="-0 -0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/base_conector.stl"/>
+      </geometry>
+      <material name="base_conector_material">
+        <color rgba="1 0 0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 -0.39351 -0.100335" rpy="-0 -0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/base_conector.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_10 -->
+    <visual>
+      <origin xyz="-0.114743 0.0942397 -0.165335" rpy="-0 -0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__6.stl"/>
+      </geometry>
+      <material name="part_1_10_material">
+        <color rgba="1 0 0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 0.0942397 -0.165335" rpy="-0 -0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__6.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part acople_new_2 -->
+    <visual>
+      <origin xyz="-0.0147427 -0.0589603 -0.100335" rpy="1.5708 0.626436 0"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new__2.stl"/>
+      </geometry>
+      <material name="acople_new_2_material">
+        <color rgba="0.231373 0.380392 0.705882 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.0147427 -0.0589603 -0.100335" rpy="1.5708 0.626436 0"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new__2.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_2 -->
+    <visual>
+      <origin xyz="-0.114743 -0.23536 -0.149085" rpy="-0 -0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_2.stl"/>
+      </geometry>
+      <material name="part_2_material">
+        <color rgba="0.231373 0.380392 0.705882 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 -0.23536 -0.149085" rpy="-0 -0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_2.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_2_2 -->
+    <visual>
+      <origin xyz="-0.114743 -0.19256 -0.0353351" rpy="0 0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_2__2.stl"/>
+      </geometry>
+      <material name="part_2_2_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 -0.19256 -0.0353351" rpy="0 0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_2__2.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_11 -->
+    <visual>
+      <origin xyz="-0.114743 -0.25036 -0.149085" rpy="-0 -0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__7.stl"/>
+      </geometry>
+      <material name="part_1_11_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 -0.25036 -0.149085" rpy="-0 -0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__7.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_12 -->
+    <visual>
+      <origin xyz="-0.114743 -0.31086 -0.149085" rpy="-1.5708 0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__8.stl"/>
+      </geometry>
+      <material name="part_1_12_material">
+        <color rgba="0.972549 0.529412 0.00392157 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 -0.31086 -0.149085" rpy="-1.5708 0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__8.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part acople_new_3 -->
+    <visual>
+      <origin xyz="-0.214744 -0.22716 -0.100335" rpy="1.5708 0.626436 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new__2.stl"/>
+      </geometry>
+      <material name="acople_new_3_material">
+        <color rgba="0.231373 0.380392 0.705882 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.214744 -0.22716 -0.100335" rpy="1.5708 0.626436 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new__2.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_13 -->
+    <visual>
+      <origin xyz="-0.0147427 -0.25586 -0.100335" rpy="3.14159 -0.551662 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+      <material name="part_1_13_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.0147427 -0.25586 -0.100335" rpy="3.14159 -0.551662 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part acople_new_4 -->
+    <visual>
+      <origin xyz="-0.0147427 -0.17076 -0.100335" rpy="1.5708 0.626436 -0"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new.stl"/>
+      </geometry>
+      <material name="acople_new_4_material">
+        <color rgba="0.231373 0.380392 0.705882 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.0147427 -0.17076 -0.100335" rpy="1.5708 0.626436 -0"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_14 -->
+    <visual>
+      <origin xyz="-0.114743 -0.0935603 -0.0353351" rpy="-0 -0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__9.stl"/>
+      </geometry>
+      <material name="part_1_14_material">
+        <color rgba="0.231373 0.380392 0.705882 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 -0.0935603 -0.0353351" rpy="-0 -0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__9.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part altavoz_2 -->
+    <visual>
+      <origin xyz="-0.01344 -0.14306 -0.0530731" rpy="-0.523599 0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/altavoz.stl"/>
+      </geometry>
+      <material name="altavoz_2_material">
+        <color rgba="0.615686 0.811765 0.929412 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.01344 -0.14306 -0.0530731" rpy="-0.523599 0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/altavoz.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part base_conector_2 -->
+    <visual>
+      <origin xyz="-0.114743 0.10649 -0.100335" rpy="0 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/base_conector.stl"/>
+      </geometry>
+      <material name="base_conector_2_material">
+        <color rgba="1 0 0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 0.10649 -0.100335" rpy="0 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/base_conector.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part power_dist_r4_v3 -->
+    <visual>
+      <origin xyz="-0.114743 -0.25936 -0.0715851" rpy="1.5708 -0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/power_dist_r4_v3.stl"/>
+      </geometry>
+      <material name="power_dist_r4_v3_material">
+        <color rgba="0.627451 0.627451 0.627451 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 -0.25936 -0.0715851" rpy="1.5708 -0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/power_dist_r4_v3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_15 -->
+    <visual>
+      <origin xyz="-0.0547433 0.10649 -0.0353351" rpy="-0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1.stl"/>
+      </geometry>
+      <material name="part_1_15_material">
+        <color rgba="0.4 0.4 0.4 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.0547433 0.10649 -0.0353351" rpy="-0 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_16 -->
+    <visual>
+      <origin xyz="-0.214744 -0.0302603 -0.100335" rpy="-3.14159 -0.551662 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+      <material name="part_1_16_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.214744 -0.0302603 -0.100335" rpy="-3.14159 -0.551662 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_2_3 -->
+    <visual>
+      <origin xyz="-0.114743 -0.0935603 -0.0353351" rpy="-0 -0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_2__2.stl"/>
+      </geometry>
+      <material name="part_2_3_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.114743 -0.0935603 -0.0353351" rpy="-0 -0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_2__2.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link joint_1 -->
+  <link name="joint_1">
+    <inertial>
+      <origin xyz="5.7031e-05 -0.00367115 0.0652346" rpy="0 0 0"/>
+      <mass value="0.625"/>
+      <inertia ixx="0.000575632" ixy="2.4443e-07" ixz="-2.38003e-06" iyy="0.000944443" iyz="1.94005e-06" izz="0.000554977"/>
+    </inertial>
+    <!-- Part body1 -->
+    <visual>
+      <origin xyz="0 0.05015 0.0665" rpy="1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1.stl"/>
+      </geometry>
+      <material name="body1_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0.05015 0.0665" rpy="1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_17 -->
+    <visual>
+      <origin xyz="-0 0.01475 0.0665" rpy="-0 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+      <material name="part_1_17_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 0.01475 0.0665" rpy="-0 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part body1_2 -->
+    <visual>
+      <origin xyz="0 0.05015 0.0665" rpy="1.5708 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1__2.stl"/>
+      </geometry>
+      <material name="body1_2_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0.05015 0.0665" rpy="1.5708 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1__2.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link joint_2l -->
+  <link name="joint_2l">
+    <inertial>
+      <origin xyz="0.0122264 -0.00113114 0.0619463" rpy="0 0 0"/>
+      <mass value="0.698111"/>
+      <inertia ixx="0.000661625" ixy="9.70405e-07" ixz="-0.000191071" iyy="0.00149731" iyz="3.07894e-05" izz="0.00158232"/>
+    </inertial>
+    <!-- Part acople_new_5 -->
+    <visual>
+      <origin xyz="-0 0 0.0518" rpy="3.14159 -0 -0.392699"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new__3.stl"/>
+      </geometry>
+      <material name="acople_new_5_material">
+        <color rgba="1 0 0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 0 0.0518" rpy="3.14159 -0 -0.392699"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_18 -->
+    <visual>
+      <origin xyz="-0 -0 0.0805" rpy="1.5708 -0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+      <material name="part_1_18_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0 0.0805" rpy="1.5708 -0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part femurc -->
+    <visual>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/femurc.stl"/>
+      </geometry>
+      <material name="femurc_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/femurc.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part femurb -->
+    <visual>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/femurb.stl"/>
+      </geometry>
+      <material name="femurb_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/femurb.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part femura -->
+    <visual>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/femura.stl"/>
+      </geometry>
+      <material name="femura_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/femura.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_19 -->
+    <visual>
+      <origin xyz="0.144 -0 0.094125" rpy="-3.14159 0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__10.stl"/>
+      </geometry>
+      <material name="part_1_19_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.144 -0 0.094125" rpy="-3.14159 0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__10.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link spur_gear__13_teeth -->
+  <link name="spur_gear__13_teeth">
+    <inertial>
+      <origin xyz="0.0140149 0.00696197 0.00960642" rpy="0 0 0"/>
+      <mass value="0.019"/>
+      <inertia ixx="4.20952e-06" ixy="-3.93311e-06" ixz="-9.30724e-07" iyy="9.28262e-06" iyz="-4.58328e-07" izz="1.25905e-05"/>
+    </inertial>
+    <!-- Part spur_gear__13_teeth -->
+    <visual>
+      <origin xyz="0 0 0.0195" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://stl/spur_gear__13_teeth.stl"/>
+      </geometry>
+      <material name="spur_gear__13_teeth_material">
+        <color rgba="0.615686 0.811765 0.929412 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0195" rpy="0 0 0"/>
+      <geometry>
+        <mesh filename="package://stl/spur_gear__13_teeth.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Joint from joint_2l to spur_gear__13_teeth -->
+  <joint name="M_FL" type="revolute">
+    <origin xyz="-0 -0 0.0805" rpy="-0 0 1.5708"/>
+    <parent link="joint_2l"/>
+    <child link="spur_gear__13_teeth"/>
+    <axis xyz="0 0 -1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Link joint_3lb -->
+  <link name="joint_3lb">
+    <inertial>
+      <origin xyz="0.00563533 -0.119959 0.0203208" rpy="0 0 0"/>
+      <mass value="0.16271"/>
+      <inertia ixx="0.00154436" ixy="1.95462e-05" ixz="-3.03602e-06" iyy="6.22055e-05" iyz="1.03314e-05" izz="0.0015594"/>
+    </inertial>
+    <!-- Part shoe2 -->
+    <visual>
+      <origin xyz="0.007 -0.202 0.003675" rpy="-1.5708 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/shoe2.stl"/>
+      </geometry>
+      <material name="shoe2_material">
+        <color rgba="0.14902 0.137255 0.137255 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.007 -0.202 0.003675" rpy="-1.5708 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/shoe2.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_3 -->
+    <visual>
+      <origin xyz="0.007 -0.202 0.003675" rpy="-1.5708 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_3.stl"/>
+      </geometry>
+      <material name="part_3_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.007 -0.202 0.003675" rpy="-1.5708 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_20 -->
+    <visual>
+      <origin xyz="0 -0.0565 0.021175" rpy="-1.5708 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__11.stl"/>
+      </geometry>
+      <material name="part_1_20_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 -0.0565 0.021175" rpy="-1.5708 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__11.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_21 -->
+    <visual>
+      <origin xyz="0 -0.1725 0.021175" rpy="3.14159 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__12.stl"/>
+      </geometry>
+      <material name="part_1_21_material">
+        <color rgba="0.301961 0.301961 0.301961 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 -0.1725 0.021175" rpy="3.14159 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__12.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_2_4 -->
+    <visual>
+      <origin xyz="0 -0.0565 0.021175" rpy="-1.5708 -0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_2__3.stl"/>
+      </geometry>
+      <material name="part_2_4_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 -0.0565 0.021175" rpy="-1.5708 -0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_2__3.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Joint from joint_2l to joint_3lb -->
+  <joint name="Knee_FL" type="revolute">
+    <origin xyz="0.144 -0 0.0625" rpy="-0 0 1.5708"/>
+    <parent link="joint_2l"/>
+    <child link="joint_3lb"/>
+    <axis xyz="0 0 -1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Joint from joint_1 to joint_2l -->
+  <joint name="HipFL" type="revolute">
+    <origin xyz="-0 0.01475 0.0665" rpy="-1.5708 0 -0"/>
+    <parent link="joint_1"/>
+    <child link="joint_2l"/>
+    <axis xyz="0 0 -1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Joint from body_subasm to joint_1 -->
+  <joint name="CoxaFL" type="revolute">
+    <origin xyz="-0.0147427 -0.25586 -0.100335" rpy="1.5708 1.5708 0"/>
+    <parent link="body_subasm"/>
+    <child link="joint_1"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Link joint_1_2 -->
+  <link name="joint_1_2">
+    <inertial>
+      <origin xyz="0.00309666 0.00197263 0.0652346" rpy="0 0 0"/>
+      <mass value="0.625"/>
+      <inertia ixx="0.000843355" ixy="0.00016451" ixz="-4.04873e-07" iyy="0.00067672" iyz="-3.04375e-06" izz="0.000554977"/>
+    </inertial>
+    <!-- Part body1_3 -->
+    <visual>
+      <origin xyz="-0.0427105 -0.0262838 0.0665" rpy="-0.551662 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1.stl"/>
+      </geometry>
+      <material name="body1_3_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.0427105 -0.0262838 0.0665" rpy="-0.551662 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_22 -->
+    <visual>
+      <origin xyz="-0.0125619 -0.00773052 0.0665" rpy="0 0 2.12246"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+      <material name="part_1_22_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.0125619 -0.00773052 0.0665" rpy="0 0 2.12246"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part body1_4 -->
+    <visual>
+      <origin xyz="-0.0427105 -0.0262838 0.0665" rpy="-2.58993 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1__2.stl"/>
+      </geometry>
+      <material name="body1_4_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.0427105 -0.0262838 0.0665" rpy="-2.58993 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1__2.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link joint_2r -->
+  <link name="joint_2r">
+    <inertial>
+      <origin xyz="0.0109085 0.0056136 0.0619169" rpy="0 0 0"/>
+      <mass value="0.698111"/>
+      <inertia ixx="0.000784301" ixy="-0.000296837" ixz="-0.000162693" iyy="0.00137221" iyz="-9.94544e-05" izz="0.0015825"/>
+    </inertial>
+    <!-- Part part_1_23 -->
+    <visual>
+      <origin xyz="0.133039 0.0551064 0.093125" rpy="3.14159 -0 -1.1781"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__10.stl"/>
+      </geometry>
+      <material name="part_1_23_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.133039 0.0551064 0.093125" rpy="3.14159 -0 -1.1781"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__10.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part acople_new_6 -->
+    <visual>
+      <origin xyz="-0 0 0.0518" rpy="-3.14159 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new__3.stl"/>
+      </geometry>
+      <material name="acople_new_6_material">
+        <color rgba="1 0 0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 0 0.0518" rpy="-3.14159 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part femurc_2 -->
+    <visual>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/femurc.stl"/>
+      </geometry>
+      <material name="femurc_2_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/femurc.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_4 -->
+    <visual>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/part_4.stl"/>
+      </geometry>
+      <material name="part_4_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/part_4.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_24 -->
+    <visual>
+      <origin xyz="-0 -0 0.0805" rpy="1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+      <material name="part_1_24_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0 0.0805" rpy="1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_5 -->
+    <visual>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/part_5.stl"/>
+      </geometry>
+      <material name="part_5_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/part_5.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link joint_3ra -->
+  <link name="joint_3ra">
+    <inertial>
+      <origin xyz="-0.00867335 0.0133694 0.00959798" rpy="0 0 0"/>
+      <mass value="0.019"/>
+      <inertia ixx="8.97375e-06" ixy="4.26415e-06" ixz="5.74864e-07" iyy="4.63042e-06" iyz="-8.87327e-07" izz="1.26979e-05"/>
+    </inertial>
+    <!-- Part spur_gear__13_teeth_2 -->
+    <visual>
+      <origin xyz="0 0 0.0195" rpy="-0 -0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/spur_gear__13_teeth__2.stl"/>
+      </geometry>
+      <material name="spur_gear__13_teeth_2_material">
+        <color rgba="0.615686 0.811765 0.929412 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0195" rpy="-0 -0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/spur_gear__13_teeth__2.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Joint from joint_2r to joint_3ra -->
+  <joint name="M_FR" type="revolute">
+    <origin xyz="-0 -0 0.0805" rpy="0 0 1.9635"/>
+    <parent link="joint_2r"/>
+    <child link="joint_3ra"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Link joint_3rb -->
+  <link name="joint_3rb">
+    <inertial>
+      <origin xyz="-0.00563533 -0.119959 0.0203234" rpy="0 0 0"/>
+      <mass value="0.16271"/>
+      <inertia ixx="0.00154437" ixy="-1.95463e-05" ixz="3.03662e-06" iyy="6.22119e-05" iyz="1.02803e-05" izz="0.0015594"/>
+    </inertial>
+    <!-- Part shoe2_2 -->
+    <visual>
+      <origin xyz="-0.007 -0.202 0.038675" rpy="-1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/shoe2.stl"/>
+      </geometry>
+      <material name="shoe2_2_material">
+        <color rgba="0.14902 0.137255 0.137255 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.007 -0.202 0.038675" rpy="-1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/shoe2.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_3_2 -->
+    <visual>
+      <origin xyz="-0.007 -0.202 0.038675" rpy="-1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_3.stl"/>
+      </geometry>
+      <material name="part_3_2_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.007 -0.202 0.038675" rpy="-1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_25 -->
+    <visual>
+      <origin xyz="-0 -0.0565 0.021175" rpy="-1.5708 -0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__11.stl"/>
+      </geometry>
+      <material name="part_1_25_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0.0565 0.021175" rpy="-1.5708 -0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__11.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_26 -->
+    <visual>
+      <origin xyz="0 -0.1725 0.021175" rpy="3.14159 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__12.stl"/>
+      </geometry>
+      <material name="part_1_26_material">
+        <color rgba="0.301961 0.301961 0.301961 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 -0.1725 0.021175" rpy="3.14159 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__12.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_27 -->
+    <visual>
+      <origin xyz="-0 -0.0565 0.034825" rpy="1.5708 -0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__13.stl"/>
+      </geometry>
+      <material name="part_1_27_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0.0565 0.034825" rpy="1.5708 -0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__13.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Joint from joint_2r to joint_3rb -->
+  <joint name="Knee_FR" type="revolute">
+    <origin xyz="0.133039 0.0551064 0.0625" rpy="0 0 1.9635"/>
+    <parent link="joint_2r"/>
+    <child link="joint_3rb"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Joint from joint_1_2 to joint_2r -->
+  <joint name="HipFR" type="revolute">
+    <origin xyz="-0.0125619 -0.00773052 0.0665" rpy="1.5708 0.392699 -1.01913"/>
+    <parent link="joint_1_2"/>
+    <child link="joint_2r"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Joint from body_subasm to joint_1_2 -->
+  <joint name="CoxaFR" type="revolute">
+    <origin xyz="-0.214744 -0.25536 -0.100335" rpy="1.5708 0.551662 0"/>
+    <parent link="body_subasm"/>
+    <child link="joint_1_2"/>
+    <axis xyz="0 0 -1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Link joint_1_3 -->
+  <link name="joint_1_3">
+    <inertial>
+      <origin xyz="5.7031e-05 -0.00367115 0.0652346" rpy="0 0 0"/>
+      <mass value="0.625"/>
+      <inertia ixx="0.000575632" ixy="2.4443e-07" ixz="-2.38003e-06" iyy="0.000944443" iyz="1.94005e-06" izz="0.000554977"/>
+    </inertial>
+    <!-- Part body1_5 -->
+    <visual>
+      <origin xyz="0 0.05015 0.0665" rpy="1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1.stl"/>
+      </geometry>
+      <material name="body1_5_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0.05015 0.0665" rpy="1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_28 -->
+    <visual>
+      <origin xyz="-0 0.01475 0.0665" rpy="0 -0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+      <material name="part_1_28_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 0.01475 0.0665" rpy="0 -0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part body1_6 -->
+    <visual>
+      <origin xyz="0 0.05015 0.0665" rpy="1.5708 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1__2.stl"/>
+      </geometry>
+      <material name="body1_6_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0.05015 0.0665" rpy="1.5708 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1__2.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link joint_2l_2 -->
+  <link name="joint_2l_2">
+    <inertial>
+      <origin xyz="-0.0122264 0.00113114 0.0619463" rpy="0 0 0"/>
+      <mass value="0.698111"/>
+      <inertia ixx="0.000661625" ixy="9.70405e-07" ixz="0.000191071" iyy="0.00149731" iyz="-3.07894e-05" izz="0.00158232"/>
+    </inertial>
+    <!-- Part acople_new_7 -->
+    <visual>
+      <origin xyz="0 0 0.0518" rpy="-3.14159 0 2.74889"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new__3.stl"/>
+      </geometry>
+      <material name="acople_new_7_material">
+        <color rgba="1 0 0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0518" rpy="-3.14159 0 2.74889"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_29 -->
+    <visual>
+      <origin xyz="0 0 0.0805" rpy="1.5708 0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+      <material name="part_1_29_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0805" rpy="1.5708 0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part femurc_3 -->
+    <visual>
+      <origin xyz="0 0 0.0805" rpy="-1.5708 -0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/femurc.stl"/>
+      </geometry>
+      <material name="femurc_3_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0805" rpy="-1.5708 -0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/femurc.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part femurb_2 -->
+    <visual>
+      <origin xyz="0 0 0.0805" rpy="-1.5708 -0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/femurb.stl"/>
+      </geometry>
+      <material name="femurb_2_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0805" rpy="-1.5708 -0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/femurb.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part femura_2 -->
+    <visual>
+      <origin xyz="0 0 0.0805" rpy="-1.5708 -0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/femura.stl"/>
+      </geometry>
+      <material name="femura_2_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0805" rpy="-1.5708 -0 -1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/femura.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_30 -->
+    <visual>
+      <origin xyz="-0.144 0 0.094125" rpy="-3.14159 -0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__10.stl"/>
+      </geometry>
+      <material name="part_1_30_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.144 0 0.094125" rpy="-3.14159 -0 1.5708"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__10.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link spur_gear__13_teeth_2 -->
+  <link name="spur_gear__13_teeth_2">
+    <inertial>
+      <origin xyz="0.0140149 0.00696197 0.00960642" rpy="0 0 0"/>
+      <mass value="0.019"/>
+      <inertia ixx="4.20952e-06" ixy="-3.93311e-06" ixz="-9.30724e-07" iyy="9.28262e-06" iyz="-4.58328e-07" izz="1.25905e-05"/>
+    </inertial>
+    <!-- Part spur_gear__13_teeth_3 -->
+    <visual>
+      <origin xyz="0 0 0.0195" rpy="-0 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/spur_gear__13_teeth.stl"/>
+      </geometry>
+      <material name="spur_gear__13_teeth_3_material">
+        <color rgba="0.615686 0.811765 0.929412 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0195" rpy="-0 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/spur_gear__13_teeth.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Joint from joint_2l_2 to spur_gear__13_teeth_2 -->
+  <joint name="M_BL" type="revolute">
+    <origin xyz="0 0 0.0805" rpy="-0 0 -1.5708"/>
+    <parent link="joint_2l_2"/>
+    <child link="spur_gear__13_teeth_2"/>
+    <axis xyz="0 0 -1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Link joint_3lb_2 -->
+  <link name="joint_3lb_2">
+    <inertial>
+      <origin xyz="0.00563533 -0.119959 0.0203208" rpy="0 0 0"/>
+      <mass value="0.16271"/>
+      <inertia ixx="0.00154436" ixy="1.95462e-05" ixz="-3.03602e-06" iyy="6.22055e-05" iyz="1.03314e-05" izz="0.0015594"/>
+    </inertial>
+    <!-- Part shoe2_3 -->
+    <visual>
+      <origin xyz="0.007 -0.202 0.003675" rpy="-1.5708 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/shoe2.stl"/>
+      </geometry>
+      <material name="shoe2_3_material">
+        <color rgba="0.14902 0.137255 0.137255 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.007 -0.202 0.003675" rpy="-1.5708 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/shoe2.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_3_3 -->
+    <visual>
+      <origin xyz="0.007 -0.202 0.003675" rpy="-1.5708 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_3.stl"/>
+      </geometry>
+      <material name="part_3_3_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.007 -0.202 0.003675" rpy="-1.5708 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_31 -->
+    <visual>
+      <origin xyz="0 -0.0565 0.021175" rpy="-1.5708 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__11.stl"/>
+      </geometry>
+      <material name="part_1_31_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 -0.0565 0.021175" rpy="-1.5708 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__11.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_32 -->
+    <visual>
+      <origin xyz="-0 -0.1725 0.021175" rpy="3.14159 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__12.stl"/>
+      </geometry>
+      <material name="part_1_32_material">
+        <color rgba="0.301961 0.301961 0.301961 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0.1725 0.021175" rpy="3.14159 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__12.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_2_5 -->
+    <visual>
+      <origin xyz="0 -0.0565 0.021175" rpy="-1.5708 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_2__3.stl"/>
+      </geometry>
+      <material name="part_2_5_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 -0.0565 0.021175" rpy="-1.5708 0 -0"/>
+      <geometry>
+        <mesh filename="package://stl/part_2__3.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Joint from joint_2l_2 to joint_3lb_2 -->
+  <joint name="Knee_BL" type="revolute">
+    <origin xyz="-0.144 0 0.0625" rpy="-0 0 -1.5708"/>
+    <parent link="joint_2l_2"/>
+    <child link="joint_3lb_2"/>
+    <axis xyz="0 0 -1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Joint from joint_1_3 to joint_2l_2 -->
+  <joint name="HipBL" type="revolute">
+    <origin xyz="-0 0.01475 0.0665" rpy="-1.5708 -0 -0"/>
+    <parent link="joint_1_3"/>
+    <child link="joint_2l_2"/>
+    <axis xyz="0 0 -1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Joint from body_subasm to joint_1_3 -->
+  <joint name="CoxaBL" type="revolute">
+    <origin xyz="-0.0147427 -0.0302603 -0.100335" rpy="-1.5708 -1.5708 0"/>
+    <parent link="body_subasm"/>
+    <child link="joint_1_3"/>
+    <axis xyz="0 0 -1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Link joint_1_4 -->
+  <link name="joint_1_4">
+    <inertial>
+      <origin xyz="-0.00315644 0.00187549 0.0652346" rpy="0 0 0"/>
+      <mass value="0.625"/>
+      <inertia ixx="0.000842918" ixy="-0.000164731" ixz="2.89964e-06" iyy="0.000677157" iyz="1.01018e-06" izz="0.000554977"/>
+    </inertial>
+    <!-- Part body1_7 -->
+    <visual>
+      <origin xyz="0.0427105 -0.0262838 0.0665" rpy="-2.58993 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1.stl"/>
+      </geometry>
+      <material name="body1_7_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0427105 -0.0262838 0.0665" rpy="-2.58993 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_33 -->
+    <visual>
+      <origin xyz="0.0125619 -0.00773052 0.0665" rpy="0 -0 -2.12246"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+      <material name="part_1_33_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0125619 -0.00773052 0.0665" rpy="0 -0 -2.12246"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part body1_8 -->
+    <visual>
+      <origin xyz="0.0427105 -0.0262838 0.0665" rpy="-0.551662 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1__2.stl"/>
+      </geometry>
+      <material name="body1_8_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.0427105 -0.0262838 0.0665" rpy="-0.551662 -1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/body1__2.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link joint_2r_2 -->
+  <link name="joint_2r_2">
+    <inertial>
+      <origin xyz="0.0109085 0.0056136 0.0619169" rpy="0 0 0"/>
+      <mass value="0.698111"/>
+      <inertia ixx="0.000784301" ixy="-0.000296837" ixz="-0.000162693" iyy="0.00137221" iyz="-9.94544e-05" izz="0.0015825"/>
+    </inertial>
+    <!-- Part part_1_34 -->
+    <visual>
+      <origin xyz="0.133039 0.0551064 0.093125" rpy="3.14159 0 -1.1781"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__10.stl"/>
+      </geometry>
+      <material name="part_1_34_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0.133039 0.0551064 0.093125" rpy="3.14159 0 -1.1781"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__10.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part acople_new_8 -->
+    <visual>
+      <origin xyz="-0 0 0.0518" rpy="3.14159 0 0"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new__3.stl"/>
+      </geometry>
+      <material name="acople_new_8_material">
+        <color rgba="1 0 0 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 0 0.0518" rpy="3.14159 0 0"/>
+      <geometry>
+        <mesh filename="package://stl/acople_new__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part femurc_4 -->
+    <visual>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/femurc.stl"/>
+      </geometry>
+      <material name="femurc_4_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/femurc.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_4_2 -->
+    <visual>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/part_4.stl"/>
+      </geometry>
+      <material name="part_4_2_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/part_4.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_35 -->
+    <visual>
+      <origin xyz="-0 -0 0.0805" rpy="1.5708 -0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+      <material name="part_1_35_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0 0.0805" rpy="1.5708 -0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_5_2 -->
+    <visual>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/part_5.stl"/>
+      </geometry>
+      <material name="part_5_2_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0 0.0805" rpy="-1.5708 0 1.9635"/>
+      <geometry>
+        <mesh filename="package://stl/part_5.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Link joint_3ra_2 -->
+  <link name="joint_3ra_2">
+    <inertial>
+      <origin xyz="0.0133694 0.00867335 0.00959798" rpy="0 0 0"/>
+      <mass value="0.019"/>
+      <inertia ixx="4.63042e-06" ixy="-4.26415e-06" ixz="-8.87327e-07" iyy="8.97375e-06" iyz="-5.74864e-07" izz="1.26979e-05"/>
+    </inertial>
+    <!-- Part spur_gear__13_teeth_4 -->
+    <visual>
+      <origin xyz="0 0 0.0195" rpy="0 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/spur_gear__13_teeth__2.stl"/>
+      </geometry>
+      <material name="spur_gear__13_teeth_4_material">
+        <color rgba="0.615686 0.811765 0.929412 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0.0195" rpy="0 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/spur_gear__13_teeth__2.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Joint from joint_2r_2 to joint_3ra_2 -->
+  <joint name="M_BR" type="revolute">
+    <origin xyz="-0 -0 0.0805" rpy="-0 0 -2.74889"/>
+    <parent link="joint_2r_2"/>
+    <child link="joint_3ra_2"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Link joint_3rb_2 -->
+  <link name="joint_3rb_2">
+    <inertial>
+      <origin xyz="-0.00563533 -0.119959 0.0203234" rpy="0 0 0"/>
+      <mass value="0.16271"/>
+      <inertia ixx="0.00154437" ixy="-1.95463e-05" ixz="3.03662e-06" iyy="6.22119e-05" iyz="1.02803e-05" izz="0.0015594"/>
+    </inertial>
+    <!-- Part shoe2_4 -->
+    <visual>
+      <origin xyz="-0.007 -0.202 0.038675" rpy="-1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/shoe2.stl"/>
+      </geometry>
+      <material name="shoe2_4_material">
+        <color rgba="0.14902 0.137255 0.137255 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.007 -0.202 0.038675" rpy="-1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/shoe2.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_3_4 -->
+    <visual>
+      <origin xyz="-0.007 -0.202 0.038675" rpy="-1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_3.stl"/>
+      </geometry>
+      <material name="part_3_4_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.007 -0.202 0.038675" rpy="-1.5708 1.5708 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_3.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_36 -->
+    <visual>
+      <origin xyz="0 -0.0565 0.021175" rpy="-1.5708 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__11.stl"/>
+      </geometry>
+      <material name="part_1_36_material">
+        <color rgba="0.917647 0.917647 0.917647 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="0 -0.0565 0.021175" rpy="-1.5708 -0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__11.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_37 -->
+    <visual>
+      <origin xyz="-0 -0.1725 0.021175" rpy="-3.14159 0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__12.stl"/>
+      </geometry>
+      <material name="part_1_37_material">
+        <color rgba="0.301961 0.301961 0.301961 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0.1725 0.021175" rpy="-3.14159 0 0"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__12.stl"/>
+      </geometry>
+    </collision>
+    <!-- Part part_1_38 -->
+    <visual>
+      <origin xyz="-0 -0.0565 0.034825" rpy="1.5708 0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__13.stl"/>
+      </geometry>
+      <material name="part_1_38_material">
+        <color rgba="0.647059 0.647059 0.647059 1"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0 -0.0565 0.034825" rpy="1.5708 0 3.14159"/>
+      <geometry>
+        <mesh filename="package://stl/part_1__13.stl"/>
+      </geometry>
+    </collision>
+  </link>
+  <!-- Joint from joint_2r_2 to joint_3rb_2 -->
+  <joint name="Knee_BR" type="revolute">
+    <origin xyz="0.133039 0.0551064 0.0625" rpy="0 0 1.9635"/>
+    <parent link="joint_2r_2"/>
+    <child link="joint_3rb_2"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Joint from joint_1_4 to joint_2r_2 -->
+  <joint name="HipBR" type="revolute">
+    <origin xyz="0.0125619 -0.00773052 0.0665" rpy="-1.5708 -0.392699 -2.12246"/>
+    <parent link="joint_1_4"/>
+    <child link="joint_2r_2"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+  <!-- Joint from body_subasm to joint_1_4 -->
+  <joint name="CoxaBR" type="revolute">
+    <origin xyz="-0.214744 -0.0302603 -0.100335" rpy="1.5708 -0.551662 3.14159"/>
+    <parent link="body_subasm"/>
+    <child link="joint_1_4"/>
+    <axis xyz="0 0 1"/>
+    <limit effort="10" velocity="10" lower="-3.141592653589793" upper="3.141592653589793"/>
+  </joint>
+</robot>

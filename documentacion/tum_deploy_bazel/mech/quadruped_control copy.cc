@@ -1,5 +1,3 @@
-
-
 #include "mech/quadruped_control.h"
 
 #include <fstream>
@@ -21,7 +19,7 @@
 #include "base/interpolate.h"
 #include "base/logging.h"
 #include "base/sophus.h"
-#include "base/telemetry_registry.h"
+#include "base/telemetry_relgistry.h"
 #include "base/timestamped_log.h"
 
 #include "mech/attitude_data.h"
@@ -33,15 +31,6 @@
 #include "mech/quadruped_util.h"
 #include "mech/swing_trajectory.h"
 #include "mech/trajectory.h"
-
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include "robot_types.hpp"   // Misma estructura que usa main.cpp
-
-static constexpr bool kSimulationMode = true;  // true = escribe en SHM para DART
-                                                // false = comportamiento normal
 
 namespace pl = std::placeholders;
 
@@ -158,36 +147,6 @@ class QuadrupedControl::Impl {
     context.telemetry_registry->Register("qc_control", &control_signal_);
     context.telemetry_registry->Register("imu", &imu_signal_);
     context.telemetry_registry->Register("servo_config", &servo_config_signal_);
-
-      // --- DART Simulation Bridge: inicializar SHM ---
-    if (kSimulationMode) {
-      int fd = shm_open("/rex_cmd", O_CREAT | O_RDWR, 0666);
-      ftruncate(fd, sizeof(CommandData));
-      shm_cmd_ptr_ = static_cast<CommandData*>(
-          mmap(nullptr, sizeof(CommandData),
-              PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
-      close(fd);
-
-      if (shm_cmd_ptr_ == MAP_FAILED) {
-        shm_cmd_ptr_ = nullptr;
-        log_.warn("SHM /rex_cmd: mmap falló. Bridge desactivado.");
-      }
-    }
-
-     if (kSimulationMode) {
-      int tel_fd = shm_open("/rex_tel", O_CREAT | O_RDWR, 0666);
-      ftruncate(tel_fd, sizeof(TelemetryData));
-      shm_tel_ptr_ = static_cast<TelemetryData*>(
-          mmap(nullptr, sizeof(TelemetryData),
-               PROT_READ | PROT_WRITE, MAP_SHARED, tel_fd, 0));
-      close(tel_fd);
-
-      if (shm_tel_ptr_ == MAP_FAILED) {
-        shm_tel_ptr_ = nullptr;
-      }
-    }
-    // -----------------------------------------------
-
   }
 
   void AsyncStart(mjlib::io::ErrorCallback callback) {
@@ -321,14 +280,8 @@ class QuadrupedControl::Impl {
       }
       return &status_request_;
     }();
-
-    if (kSimulationMode) {
-      // El stub no llama al callback — lo invocamos directamente
-      HandleStatus(mjlib::base::error_code());
-    } else {
-      pi3hat_->Cycle(&imu_data_, request, &status_reply_,
-                    std::bind(&Impl::HandleStatus, this, pl::_1));
-    }
+    pi3hat_->Cycle(&imu_data_, request, &status_reply_,
+                   std::bind(&Impl::HandleStatus, this, pl::_1));
   }
 
   void HandleStatus(const mjlib::base::error_code& ec) {
@@ -356,9 +309,8 @@ class QuadrupedControl::Impl {
       return result;
     }();
     status_.missing_replies = kNumServos - found_servos;
-    if (kSimulationMode) { status_.missing_replies = 0; }
 
-    if (!kSimulationMode && found_servos != kNumServos)  {
+    if (found_servos != kNumServos) {
       if (status_.state.joints.size() != kNumServos) {
         // We have to get at least one full set before we can start
         // updating.
@@ -405,15 +357,11 @@ class QuadrupedControl::Impl {
 
     if (!client_command_.empty()) {
       client_command_reply_.clear();
-      if (kSimulationMode) {
-          HandleCommand({});  // stub no llama al callback — lo llamamos directo
-      } else {
-          pi3hat_->AsyncTransmit(
-              &client_command_, &client_command_reply_,
-              std::bind(&Impl::HandleCommand, this, pl::_1));
-      }
+      pi3hat_->AsyncTransmit(
+          &client_command_, &client_command_reply_,
+          std::bind(&Impl::HandleCommand, this, pl::_1));
     } else {
-        HandleCommand({});
+      HandleCommand({});
     }
   }
 
@@ -447,38 +395,6 @@ class QuadrupedControl::Impl {
     //               << "          " << std::flush;
     // }
     // // --- FIN DEL CÓDIGO NUEVO ---
-
-   // --- DART Simulation Bridge: leer telemetría real de DART ---
-    if (kSimulationMode) {
-      // Mapeo de ID Moteus → [pata][motor], igual que en EmitControl()
-      // IDs 1-3: pata 0 (FL), 4-6: pata 1 (FR), 7-9: pata 2 (BL), 10-12: pata 3 (BR)
-      auto populate_joints = [&]() {
-        status_.state.joints.clear();
-        for (int id = 1; id <= kNumServos; id++) {
-          const int idx = id - 1;
-          const int leg = idx / 3;
-          const int mot = idx % 3;
-
-          QuadrupedState::Joint j;
-          j.id = id;
-          j.voltage = 37.0;
-          j.temperature_C = 25.0;
-          j.mode = 10;  // kPosition en Moteus
-          j.fault = 0;
-
-          if (shm_tel_ptr_ != nullptr) {
-            // Leer posición real de DART
-            j.angle_deg      = shm_tel_ptr_->measured_angles[leg][mot];
-            j.velocity_dps   = shm_tel_ptr_->measured_velocities[leg][mot];
-            j.torque_Nm      = shm_tel_ptr_->measured_torques[leg][mot];
-          }
-          status_.state.joints.push_back(j);
-        }
-      };
-
-      // Poblar siempre en simulación (DART es la fuente de verdad)
-      populate_joints();
-    }
 
     if (status_.mode == QM::kConfiguring) {
       // Try to update our config structure.
@@ -588,8 +504,8 @@ class QuadrupedControl::Impl {
     }
 
     // We should only be here if we have something for all our joints.
-    if (!kSimulationMode && status_.state.joints.size() != kNumServos) {
-    return false;
+    if (status_.state.joints.size() != kNumServos) {
+      return false;
     }
 
     IkSolver::JointAngles joint_angles;
@@ -866,17 +782,6 @@ class QuadrupedControl::Impl {
 
   void MaybeChangeMode() {
     const auto old_mode = status_.mode;
-
-    // TEMPORAL DEBUG
-    static int mc_counter = 0;
-    if (++mc_counter >= 400) {
-        mc_counter = 0;
-        std::cerr << "[MODE DEBUG] current_cmd.mode=" 
-                  << static_cast<int>(current_command_.mode)
-                  << " status.mode=" << static_cast<int>(status_.mode)
-                  << "\n";
-    }
-
     if (status_.mode == QM::kConfiguring) {
       // We can only leave this mode after we have heard from all the
       // servos, they are all rezeroed, and have an appropriate
@@ -1018,9 +923,6 @@ class QuadrupedControl::Impl {
 
   bool IsConfiguringDone() {
     // We must have heard from all 12 servos.
-
-    if (kSimulationMode) { return true; }
-
     if (reported_servo_config_.servos.size() != kNumServos) {
       status_.fault = "missing servos";
       return false;
@@ -1093,7 +995,6 @@ class QuadrupedControl::Impl {
 
   void DoControl_Stopped() {
     status_.fault = "";
-    std::cerr << "[STOPPED]\n";  // TEMPORAL - una sola vez
 
     EmitStop();
   }
@@ -2062,35 +1963,6 @@ void DoControl_StandUp_Prepositioning() {
 
   void EmitControl() {
     control_log_->timestamp = Now();
-
-    // --- DART Simulation Bridge: publicar comandos en SHM ---
-    if (kSimulationMode && shm_cmd_ptr_ != nullptr) {
-
-      // DEBUG: imprime cada 400 ciclos (~1 vez por segundo)
-      static int debug_counter = 0;
-      if (++debug_counter >= 400) {
-        debug_counter = 0;
-        std::cerr << "[SHM DEBUG] joints.size()=" 
-                  << control_log_->joints.size()
-                  << " modo=" << static_cast<int>(status_.mode)
-                  << "\n";
-      }
-
-      for (const auto& joint : control_log_->joints) {
-        const int idx = joint.id - 1;
-        if (idx < 0 || idx >= 12) continue;
-
-        const int leg = idx / 3;
-        const int mot = idx % 3;
-
-        shm_cmd_ptr_->angles[leg][mot]     = joint.angle_deg;
-        shm_cmd_ptr_->velocities[leg][mot] = joint.velocity_dps;
-        shm_cmd_ptr_->kp_scale[leg][mot]   = joint.kp_scale.value_or(1.0);
-        shm_cmd_ptr_->kd_scale[leg][mot]   = joint.kd_scale.value_or(1.0);
-      }
-    }
-    
-
     control_signal_(control_log_);
 
     size_t pos = 0;
@@ -2294,8 +2166,6 @@ void DoControl_StandUp_Prepositioning() {
   Pi3hatGetter pi3hat_getter_;
 
   Pi3hatInterface* pi3hat_ = nullptr;
-  CommandData* shm_cmd_ptr_ = nullptr;
-  TelemetryData* shm_tel_ptr_ = nullptr;
 
   using Request = Client::Request;
   Request status_request_;

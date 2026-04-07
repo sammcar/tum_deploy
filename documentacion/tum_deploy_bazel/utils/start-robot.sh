@@ -23,7 +23,7 @@ if [[ "$mach" == "armv7l" || "$mach" == "aarch64" ]]; then
     sudo LD_LIBRARY_PATH=. chrt 99 ./quadruped $CONFIG "$@"
 elif [[ "$mach" == "x86_64" ]]; then
     set -x
-    ssh tum@192.168.22.114 tum_deploy_bazel/tum_deploy/start-robot.sh "$@"
+    ssh tum@192.168.139.114 tum_deploy_bazel/tum_deploy/start-robot.sh "$@"
 else
     echo cannot determine what kind of machine it is
     exit 1

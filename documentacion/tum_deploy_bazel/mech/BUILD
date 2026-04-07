@@ -24,7 +24,7 @@ cc_library(
         "trajectory_line_intersect.cc",
         "web_server.cc",
     ],
-    hdrs = glob(["*.h"]),
+    hdrs = glob(["*.h", "*.hpp"]),
     deps = [
         "//base",
         "@boost//:filesystem",
@@ -90,6 +90,40 @@ cc_binary(
         ":mech",
         "@com_github_mjbots_mjlib//mjlib/multiplex:libmultiplex_tool",
         "@org_llvm_libcxx//:libcxx",
+    ],
+)
+
+# Genera el main para simulación (igual que module_main pero explícito)
+genrule(
+    name = "quadruped_sim_main_gen",
+    outs = ["quadruped_sim_main.cc"],
+    cmd = """cat > $(location quadruped_sim_main.cc) << EOF
+#include "mech/quadruped.h"
+#include "base/module_main.h"
+
+extern "C" {
+int main(int argc, char**argv) {
+        return mjmech::base::main<mjmech::mech::Quadruped>(argc, argv);
+}
+}
+EOF
+    """,
+)
+
+cc_binary(
+    name = "quadruped_sim",
+    srcs = [
+        ":quadruped_sim_main_gen",
+        "quadruped.h",
+    ],
+    deps = [
+        ":mech",
+        "@boost//:filesystem",
+        "@boost//:date_time",
+        "@org_llvm_libcxx//:libcxx",
+    ],
+    copts = [
+        "-Wno-gnu-designator",
     ],
 )
 
