@@ -12,6 +12,12 @@ venv/
 env/
 .venv/
 
+# Archivos y enlaces simbólicos generados por Bazel
+bazel-*
+
+# Opcional: Ignorar instaladores pesados si no quieres que vivan en el repo
+*.deb
+
 # Ignorar el venv en la raíz
 bin/
 lib/
