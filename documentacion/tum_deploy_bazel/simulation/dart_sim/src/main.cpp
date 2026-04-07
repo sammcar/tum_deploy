@@ -40,6 +40,15 @@ public:
         // ==========================================================
         // 1. FASE DE LECTURA (DART -> Memoria Compartida de Locomotion)
         // ==========================================================
+
+        static const bool invert_sign[4][3] = {
+            // Coxa    Hip     Knee
+            { false,  false,  false },  // FL (p=0)
+            { true,   false,  false },  // FR (p=1)
+            { false,  false,  false },  // BL (p=2)
+            { true,   false,  false },  // BR (p=3)
+        };
+
         
         // A. Escribir Telemetría de Motores
         for (int p = 0; p < 4; p++) {
@@ -49,6 +58,11 @@ public:
                     // DART trabaja en radianes, Locomotion espera GRADOS
                     double pos_deg = mJoints[i]->getPosition(0) * 180.0 / M_PI;
                     double vel_deg = mJoints[i]->getVelocity(0) * 180.0 / M_PI;
+
+                    if (invert_sign[p][m]) {
+                        pos_deg = -pos_deg;
+                        vel_deg = -vel_deg;
+                    }
                     
                     mTel->measured_angles[p][m] = pos_deg;
                     mTel->measured_velocities[p][m] = vel_deg;
@@ -95,7 +109,8 @@ public:
                 int i = p * 3 + m;
                 if (mJoints[i]) {
                     // Locomotion escribe en GRADOS, convertimos a radianes para DART
-                    double q_des = mCmd->angles[p][m] * M_PI / 180.0;
+                    double raw_deg = mCmd->angles[p][m];
+                    double q_des = (invert_sign[p][m] ? -raw_deg : raw_deg) * M_PI / 180.0;
                     double dq_des = mCmd->velocities[p][m] * M_PI / 180.0;
                     
                     double current_q = mJoints[i]->getPosition(0);
