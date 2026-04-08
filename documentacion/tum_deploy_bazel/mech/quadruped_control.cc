@@ -40,7 +40,7 @@
 #include <unistd.h>
 #include "robot_types.hpp"   // Misma estructura que usa main.cpp
 
-static constexpr bool kSimulationMode = true;  // true = escribe en SHM para DART
+static constexpr bool kSimulationMode = false;  // true = escribe en SHM para DART
                                                 // false = comportamiento normal
 
 namespace pl = std::placeholders;
