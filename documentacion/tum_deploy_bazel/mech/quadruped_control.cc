@@ -1,5 +1,3 @@
-
-
 #include "mech/quadruped_control.h"
 
 #include <fstream>
@@ -39,8 +37,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "robot_types.hpp"   // Misma estructura que usa main.cpp
+#include "mech/static_routines.h" 
 
-static constexpr bool kSimulationMode = false;  // true = escribe en SHM para DART
+static constexpr bool kSimulationMode = true;  // true = escribe en SHM para DART
                                                 // false = comportamiento normal
 
 namespace pl = std::placeholders;
@@ -216,6 +215,7 @@ class QuadrupedControl::Impl {
     }
 
     context_.emplace(config_, &current_command_, &status_.state);
+    static_routines_.emplace(*context_, config_); 
 
     PopulateStatusRequest();
 
@@ -850,6 +850,12 @@ class QuadrupedControl::Impl {
         DoControl_Situp();
         break;
       }
+
+      case QM::kRoutine: {          // ← NUEVO
+        DoControl_Routine();
+        break;
+      }
+
       case QM::kJump: {
         DoControl_Jump();
         break;
@@ -920,7 +926,8 @@ class QuadrupedControl::Impl {
       case QM::kRest:
       case QM::kSitup:
       case QM::kJump:
-      case QM::kWalk: {
+      case QM::kWalk:
+      case QM::kRoutine: {
         // This can only be done from certain configurations, where we
         // know all four legs are on the ground.  Modify our command
         // to try and get into that state.
@@ -958,6 +965,14 @@ class QuadrupedControl::Impl {
             status_.mode = QM::kRest;
             status_.state.rest = {};
           }
+          
+        } else if (status_.mode == QM::kRoutine) {
+          // Salir de rutina en cualquier momento pasando por kRest
+          if (current_command_.mode != QM::kRoutine) {
+            status_.mode = QM::kRest;
+            status_.state.rest = {};
+          }
+
         } else if (status_.mode == QM::kWalk) {
           // We can only leave the walk state when our desired
           // velocities are all 0 and all four legs are on the ground.
@@ -1000,6 +1015,10 @@ class QuadrupedControl::Impl {
         }
         case QM::kSitup: {
           status_.state.situp = {};
+          break;
+        }
+        case QM::kRoutine: {
+          status_.state.routine = {};
           break;
         }
         case QM::kConfiguring:
@@ -1510,6 +1529,63 @@ void DoControl_StandUp_Prepositioning() {
         return;
       }
     }
+    
+  void DoControl_Routine() {
+    ClearDesiredMotion();
+
+    // Si la rutina terminó, mantener las últimas posiciones en kRoutine.
+    // NO transicionar a kRest automáticamente — la GUI detecta done=true
+    // en la telemetría y manda mode:rest explícitamente. Esto evita que el
+    // ciclo kRoutine→kRest→kRoutine ocurra en microsegundos, invisible para
+    // la GUI que recibe telemetría a ~10-50Hz.
+    if (status_.state.routine.done) {
+        // Quedarse quieto con las últimas posiciones conocidas.
+        std::vector<QC::Leg> legs_R = old_control_log_->legs_R;
+        ControlLegs_R(std::move(legs_R), context_->LevelDesiredRB());
+        return;
+    }
+
+    // Iniciar o reiniciar si el routine_id del comando cambió.
+    if (current_command_.routine) {
+      const std::string& rid_str = current_command_.routine->routine_id;
+
+      static const std::map<std::string, RoutineId> kIdMap = {
+        {"kFlexion",    RoutineId::kFlexion},
+        {"kBaile",      RoutineId::kBaile},
+        {"kSentarse",   RoutineId::kSentarse},
+        {"kLevantarse", RoutineId::kLevantarse},
+      };
+
+      auto it = kIdMap.find(rid_str);
+      if (it != kIdMap.end()) {
+        const RoutineId rid = it->second;
+        const bool wrong_routine = (status_.state.routine.routine != rid);
+        const bool not_started   = (!status_.state.routine.done &&
+                                    status_.state.routine.step == 0 &&
+                                    status_.state.routine.step_duration_s == 0.0);
+        if (wrong_routine || not_started) {
+          static_routines_->Start(rid, &status_.state.routine);
+        }
+      }
+    } else {
+      // Sin comando de rutina activo — quedarse quieto sin arrancar nada
+      std::vector<QC::Leg> legs_R = old_control_log_->legs_R;
+      ControlLegs_R(std::move(legs_R), context_->LevelDesiredRB());
+      return;
+    }
+
+    std::vector<QC::Leg> legs_R;
+    base::KinematicRelation desired_RB;
+
+    static_routines_->Update(
+        &status_.state.routine,
+        period_s_,
+        old_control_log_->legs_R,
+        &legs_R,
+        &desired_RB);
+
+    ControlLegs_R(std::move(legs_R), desired_RB);
+  }
   
   void DoControl_Jump() {
     using JM = QuadrupedState::Jump::Mode;
@@ -2323,6 +2399,7 @@ void DoControl_StandUp_Prepositioning() {
   std::vector<int> all_leg_ids_{0, 1, 2, 3};
 
   boost::posix_time::ptime last_warn_timestamp_;
+  std::optional<StaticRoutines> static_routines_;
 };
 
 QuadrupedControl::QuadrupedControl(base::Context& context,

@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <optional>
@@ -12,6 +11,9 @@
 #include "base/quaternion.h"
 
 #include "mech/quadruped_command.h"
+// static_routines.h no incluye quadruped_context.h (usa forward-declaration),
+// así que este include no introduce ningún ciclo.
+#include "mech/static_routines.h"
 
 namespace mjmech {
 namespace mech {
@@ -21,8 +23,6 @@ struct QuadrupedState {
   struct Joint {
     int id = 0;
 
-    // These are the raw values reported by the actuator and are not
-    // referenced to any particular frame.
     double angle_deg = 0.0;
     double velocity_dps = 0.0;
     double torque_Nm = 0.0;
@@ -58,7 +58,6 @@ struct QuadrupedState {
 
   std::vector<Joint> joints;
 
-  // The leg end-effector level.
   struct Leg {
     int leg = 0;
     base::Point3D position;
@@ -80,18 +79,12 @@ struct QuadrupedState {
 
   std::vector<Leg> legs_B;
 
-  // And finally, the robot level.
   struct Robot {
-    // Only v[0, 1] and w[2] will be non-zero.
     base::KinematicRelation desired_R;
-
-    // Mappings between the B (body) frame, and the R (robot), M
-    // (CoM), and A (attitude) frames.
     base::KinematicRelation frame_RB;
     base::KinematicRelation frame_MB;
     base::KinematicRelation frame_AB;
 
-    // Transform from the CoM frame to the terrain frame.
     std::array<double, 2> terrain_rad = {};
     Sophus::SE3d tf_TA;
 
@@ -100,11 +93,9 @@ struct QuadrupedState {
     template <typename Archive>
     void Serialize(Archive* a) {
       a->Visit(MJ_NVP(desired_R));
-
       a->Visit(MJ_NVP(frame_RB));
       a->Visit(MJ_NVP(frame_MB));
       a->Visit(MJ_NVP(frame_AB));
-
       a->Visit(MJ_NVP(terrain_rad));
       a->Visit(MJ_NVP(tf_TA));
       a->Visit(MJ_NVP(voltage));
@@ -112,9 +103,6 @@ struct QuadrupedState {
   };
 
   Robot robot;
-
-  // Now the state associated with various control modes.  Each mode's
-  // data is only valid while that mode is active.
 
   struct StandUp {
     enum Mode {
@@ -149,8 +137,8 @@ struct QuadrupedState {
   struct Situp {
     enum Mode {
       kLowering = 0,
-      kPulling = 1,
-      kDone = 2,
+      kPulling  = 1,
+      kDone     = 2,
     };
 
     Mode mode = kLowering;
@@ -163,19 +151,18 @@ struct QuadrupedState {
 
   Situp situp;
 
-
   struct Jump {
     enum Mode {
-      kLowering = 0,
-      kPushing = 1,
+      kLowering   = 0,
+      kPushing    = 1,
       kRetracting = 2,
-      kFalling = 3,
-      kLanding = 4,
-      kDone = 5,
+      kFalling    = 3,
+      kLanding    = 4,
+      kDone       = 5,
     };
 
-    Mode mode = kLowering;
-    double velocity = 0.0;
+    Mode   mode         = kLowering;
+    double velocity     = 0.0;
     double acceleration = 0.0;
 
     QuadrupedCommand::Jump command;
@@ -196,19 +183,11 @@ struct QuadrupedState {
 
     struct Leg {
       base::Point3D target_R;
-      double invalid_time_s = 0.0;
-
-      // From the idle R frame position, what balanced travel distance
-      // can be achieved at the current command.
-      double travel_distance = 0.0;
-
-      // What velocity is needed to restore to a neutral standing
-      // position.
+      double invalid_time_s   = 0.0;
+      double travel_distance  = 0.0;
       double restore_velocity = 0.0;
       double restore_remaining = 0.0;
-
-      // Is this leg currently locked into contact with the ground?
-      bool latched = false;
+      bool   latched          = false;
 
       template <typename Archive>
       void Serialize(Archive* a) {
@@ -224,17 +203,14 @@ struct QuadrupedState {
     std::array<Leg, 4> legs;
 
     struct VLeg {
-      double remaining_s = 0.0;
-      double invalid_time_s = 0.0;
-      enum Mode {
-        kStance,
-        kSwing,
-      };
-      Mode mode = kStance;
-      double swing_elapsed_s = 0.0;
+      double remaining_s      = 0.0;
+      double invalid_time_s   = 0.0;
+      enum Mode { kStance, kSwing, };
+      Mode   mode             = kStance;
+      double swing_elapsed_s  = 0.0;
       double stance_elapsed_s = 0.0;
-      double phase_s = 0.0;
-      double target_time_s = 0.0;
+      double phase_s          = 0.0;
+      double target_time_s    = 0.0;
       Eigen::Vector3d predicted_next_v;
 
       template <typename Archive>
@@ -251,19 +227,18 @@ struct QuadrupedState {
     };
 
     std::array<VLeg, 2> vlegs;
-    int next_step_vleg = 0;
-    double stance_elapsed_s = 0.0;
+    int           next_step_vleg  = 0;
+    double        stance_elapsed_s = 0.0;
     base::Point3D last_swing_v_R;
-    // The minimum travel distance of any leg.
-    double travel_distance = 0.0;
+    double        travel_distance  = 0.0;
 
     struct Trot {
-      double swing_time = 0.0;
+      double swing_time   = 0.0;
       double onevleg_time = 0.0;
       double twovleg_time = 0.0;
-      double flight_time = 0.0;
-      double speed = 0.0;
-      double max_speed = 0.0;
+      double flight_time  = 0.0;
+      double speed        = 0.0;
+      double max_speed    = 0.0;
 
       template <typename Archive>
       void Serialize(Archive* a) {
@@ -293,18 +268,20 @@ struct QuadrupedState {
 
   Walk walk;
 
+  // Estado de la rutina estática activa. Solo válido en kRoutine.
+  RoutineState routine;
 
   template <typename Archive>
   void Serialize(Archive* a) {
     a->Visit(MJ_NVP(joints));
     a->Visit(MJ_NVP(legs_B));
     a->Visit(MJ_NVP(robot));
-
     a->Visit(MJ_NVP(stand_up));
     a->Visit(MJ_NVP(rest));
     a->Visit(MJ_NVP(situp));
     a->Visit(MJ_NVP(jump));
     a->Visit(MJ_NVP(walk));
+    a->Visit(MJ_NVP(routine));
   }
 };
 
@@ -313,12 +290,12 @@ inline QuadrupedState::Leg operator*(const Sophus::SE3d& pose_AB,
   auto result_A = rhs_B;
   result_A.position = pose_AB * rhs_B.position;
   result_A.velocity = pose_AB.so3() * rhs_B.velocity;
-  result_A.force_N = pose_AB.so3() * rhs_B.force_N;
+  result_A.force_N  = pose_AB.so3() * rhs_B.force_N;
   return result_A;
 }
 
-}
-}
+}  // namespace mech
+}  // namespace mjmech
 
 namespace mjlib {
 namespace base {
@@ -326,13 +303,12 @@ namespace base {
 template <>
 struct IsEnum<mjmech::mech::QuadrupedState::StandUp::Mode> {
   static constexpr bool value = true;
-
   using M = mjmech::mech::QuadrupedState::StandUp::Mode;
   static inline std::map<M, const char*> map() {
     return {
       { M::kPrepositioning, "prepositioning" },
-      { M::kStanding, "standing" },
-      { M::kDone, "done" },
+      { M::kStanding,       "standing"       },
+      { M::kDone,           "done"           },
     };
   }
 };
@@ -340,17 +316,15 @@ struct IsEnum<mjmech::mech::QuadrupedState::StandUp::Mode> {
 template <>
 struct IsEnum<mjmech::mech::QuadrupedState::Jump::Mode> {
   static constexpr bool value = true;
-
   using M = mjmech::mech::QuadrupedState::Jump::Mode;
-
   static inline std::map<M, const char*> map() {
     return {
-      { M::kLowering, "lowering" },
-      { M::kPushing, "pushing" },
+      { M::kLowering,   "lowering"   },
+      { M::kPushing,    "pushing"    },
       { M::kRetracting, "retracting" },
-      { M::kFalling, "falling" },
-      { M::kLanding, "landing" },
-      { M::kDone, "done" },
+      { M::kFalling,    "falling"    },
+      { M::kLanding,    "landing"    },
+      { M::kDone,       "done"       },
     };
   }
 };
@@ -358,32 +332,27 @@ struct IsEnum<mjmech::mech::QuadrupedState::Jump::Mode> {
 template <>
 struct IsEnum<mjmech::mech::QuadrupedState::Situp::Mode> {
   static constexpr bool value = true;
-
   using M = mjmech::mech::QuadrupedState::Situp::Mode;
-
   static inline std::map<M, const char*> map() {
     return {
       { M::kLowering, "lowering" },
-      { M::kPulling, "pulling" },
-      { M::kDone, "done" },
+      { M::kPulling,  "pulling"  },
+      { M::kDone,     "done"     },
     };
   }
 };
-
 
 template <>
 struct IsEnum<mjmech::mech::QuadrupedState::Walk::VLeg::Mode> {
   static constexpr bool value = true;
-
   using M = mjmech::mech::QuadrupedState::Walk::VLeg::Mode;
-
   static inline std::map<M, const char*> map() {
     return {
       { M::kStance, "stance" },
-      { M::kSwing, "swing" },
+      { M::kSwing,  "swing"  },
     };
   }
 };
 
-}
-}
+}  // namespace base
+}  // namespace mjlib

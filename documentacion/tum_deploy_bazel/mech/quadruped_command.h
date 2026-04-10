@@ -74,6 +74,8 @@ struct QuadrupedCommand {
 
     kSitup = 10,
 
+    kRoutine = 11,
+
     kNumModes,
   };
 
@@ -202,6 +204,20 @@ struct QuadrupedCommand {
 
   std::optional<Situp> situp;
 
+  // ← NUEVO — bloque completo
+  struct Routine {
+    // Identifica qué rutina ejecutar. El string debe coincidir con
+    // los valores del enum RoutineId en static_routines.h:
+    // "kFlexion", "kBaile", "kSentarse", "kLevantarse"
+    std::string routine_id = "kFlexion";
+
+    template <typename Archive>
+    void Serialize(Archive* a) {
+      a->Visit(MJ_NVP(routine_id));
+    }
+  };
+
+std::optional<Routine> routine;
 
   /////////////////////////////////////////////
   // Things which are common to multiple modes.
@@ -224,6 +240,7 @@ struct QuadrupedCommand {
     a->Visit(MJ_NVP(jump));
     a->Visit(MJ_NVP(walk));
     a->Visit(MJ_NVP(situp));
+    a->Visit(MJ_NVP(routine));
     a->Visit(MJ_NVP(v_R));
     a->Visit(MJ_NVP(w_R));
   }
@@ -269,6 +286,7 @@ struct IsEnum<mjmech::mech::QuadrupedCommand::Mode> {
         { M::kJump, "jump" },
         { M::kWalk, "walk" },
         { M::kSitup, "situp" },
+        { M::kRoutine, "routine" }, 
       }};
   }
 };

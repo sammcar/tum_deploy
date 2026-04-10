@@ -39,7 +39,6 @@ class RobotState:
     joints_count: int = 0
     fault: str = ""
     connected: bool = False
-    routine_done: bool = False
 
 # ------------------------------------------------------------------
 class GamepadThread(QThread):
@@ -52,7 +51,6 @@ class GamepadThread(QThread):
         self.state = {
             "lx": 0, "ly": 0, "rx": 0, "ry": 0,
             "buttons": 0, "hat_x": 0, "hat_y": 0, "hat_pressed": False,
-            "hat_up": False, "hat_down": False, "hat_left": False, "hat_right": False,
             "lt": 0, "rt": 0, "lt_pressed": False, "rt_pressed": False
         }
 
@@ -77,13 +75,13 @@ class GamepadThread(QThread):
                         elif event.code == "ABS_RY":
                             self.state["ry"] = -event.state / 32768.0
                         elif event.code == "ABS_HAT0X":
+                            old = self.state["hat_x"]
                             self.state["hat_x"] = event.state
-                            self.state["hat_left"]  = (event.state == -1)
-                            self.state["hat_right"] = (event.state ==  1)
+                            self.state["hat_pressed"] = (old == 0 and self.state["hat_x"] != 0)
                         elif event.code == "ABS_HAT0Y":
+                            old = self.state["hat_y"]
                             self.state["hat_y"] = -event.state
-                            self.state["hat_up"]   = (event.state == -1)
-                            self.state["hat_down"] = (event.state ==  1)
+                            self.state["hat_pressed"] = (old == 0 and self.state["hat_y"] != 0)
                         
                         # Gatillos como Eje Analógico (XInput / Genérico)
                         elif event.code in ["ABS_Z", "ABS_BRAKE"]:  
@@ -328,22 +326,6 @@ class QuadControlGUI(QMainWindow):
         # ¡CAMBIO AQUÍ! En lugar de False, iniciamos en modo velocidad
         self.body_pose_mode = "velocity"   # puede ser: "velocity", "translation", "rotation"
         self.prev_buttons = 0
-        self.prev_hat = {"up": False, "down": False, "left": False, "right": False}
-
-        self.ROUTINES = [
-            ("kFlexion",    "Flexiones"),
-            ("kBaile",      "Baile"),
-            ("kSentarse",   "Sentarse"),
-            ("kLevantarse", "Levantarse"),
-        ]
-        self.routine_index = 0   # rutina seleccionada en el selector (UI)
-        self.routine_active_id = self.ROUTINES[0][0]  # routine_id corriendo en el controlador
-        self.routine_active = False  # True mientras se ejecuta kRoutine
-        self.routine_was_active = False
-        # True cuando la rutina terminó sus pasos pero mantiene pose (hold_forever).
-        # En este estado el selector se desbloquea para poder lanzar kLevantarse,
-        # pero el comando sigue enviando mode:routine para mantener la pose.
-        self.routine_holding = False
         
         # Websocket
         self.websocket = None
@@ -498,9 +480,6 @@ class QuadControlGUI(QMainWindow):
             border-radius: 8px;
         """)
         self.control_mode_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.control_mode_label.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.control_mode_label.mousePressEvent = lambda e: self._cycle_body_pose_mode()
-
         self.control_mode_label.setMinimumWidth(200)
         
         header_container.addWidget(header, stretch=1)# === HEADER & STATUS BAR UNIFICADO ===
@@ -628,71 +607,9 @@ class QuadControlGUI(QMainWindow):
             self.mode_radios[mode_val] = radio
             mode_layout.addWidget(radio, i // 2, i % 2)
         
-        # Radio extra para modo rutinas
-        self.routine_radio = QRadioButton("▶ Rutinas")
-        self.routine_radio.setStyleSheet("color: #feca57; font-weight: bold;")
-        self.mode_button_group.addButton(self.routine_radio)
-        self.mode_radios["routine"] = self.routine_radio
-        mode_layout.addWidget(self.routine_radio, len(modes) // 2, len(modes) % 2)
-
         self.mode_button_group.buttonClicked.connect(self.on_mode_changed)
         mode_group.setLayout(mode_layout)
         controls_layout.addWidget(mode_group)
-
-        # Panel de rutinas estáticas
-        routine_group = QGroupBox("Rutinas Estáticas")
-        routine_group.setStyleSheet("""
-            QGroupBox {
-                color: #feca57;
-                border: 2px solid #feca57;
-                border-radius: 8px;
-                margin-top: 6px;
-                font-weight: bold;
-                padding-top: 5px;
-                background-color: #2c3e50;
-            }
-            QGroupBox::title { color: #feca57; left: 10px; padding: 0 5px; }
-        """)
-        routine_layout = QVBoxLayout()
-        routine_btn_layout = QGridLayout()
-        routine_btn_layout.setSpacing(4)
-        self.routine_buttons = []
-        for i, (rid, label) in enumerate(self.ROUTINES):
-            btn = QPushButton(label)
-            btn.setCheckable(True)
-            btn.setFixedHeight(32)
-            btn.setStyleSheet("""
-                QPushButton { background-color:#34495e; color:#ecf0f1;
-                    border:1px solid #bdc3c7; border-radius:5px; font-size:11px; font-weight:bold; }
-                QPushButton:checked { background-color:#feca57; color:#222f3e; border:2px solid #f9ca24; }
-                QPushButton:hover { background-color:#4a6278; }
-            """)
-            btn.clicked.connect(lambda checked, idx=i: self._select_routine(idx))
-            routine_btn_layout.addWidget(btn, i // 2, i % 2)
-            self.routine_buttons.append(btn)
-        self.routine_buttons[0].setChecked(True)
-        routine_layout.addLayout(routine_btn_layout)
-
-        self.launch_btn = QPushButton("▶ LANZAR")
-        self.launch_btn.setFixedHeight(34)
-        self.launch_btn.setStyleSheet("""
-            QPushButton { background-color:#e17055; color:#fff; border:none;
-                border-radius:6px; font-size:12px; font-weight:bold; }
-            QPushButton:hover { background-color:#d63031; }
-        """)
-        self.launch_btn.clicked.connect(self._launch_routine)
-        routine_layout.addWidget(self.launch_btn)
-
-        self.routine_status_label = QLabel("Sin rutina activa")
-        self.routine_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.routine_status_label.setStyleSheet("color:#7f8c8d; font-size:10px;")
-        routine_layout.addWidget(self.routine_status_label)
-
-        hint = QLabel("Gamepad: cruceta ◀▶ elegir | Y lanzar")
-        hint.setStyleSheet("color:#7f8c8d; font-size:9px; font-style:italic;")
-        routine_layout.addWidget(hint)
-        routine_group.setLayout(routine_layout)
-        controls_layout.addWidget(routine_group)
 
         # 2. Speed Settings
         speed_group = QGroupBox("Límite de Velocidad")
@@ -824,9 +741,9 @@ class QuadControlGUI(QMainWindow):
                 break
     
     def update_control_mode_indicator(self):
-        """Update the control mode indicator (velocity / translation / rotation / routine)"""
+        """Update the control mode indicator (velocity / translation / rotation)"""
         if self.body_pose_mode == "translation":
-            self.control_mode_label.setText("POSTURA: TRASLACIÓN  ▶")
+            self.control_mode_label.setText("POSTURA: TRASLACIÓN")
             self.control_mode_label.setStyleSheet("""
                 color: #222f3e;
                 font-size: 16px;
@@ -836,7 +753,7 @@ class QuadControlGUI(QMainWindow):
                 border-radius: 8px;
             """)
         elif self.body_pose_mode == "rotation":
-            self.control_mode_label.setText("POSTURA: ROTACIÓN  ▶")
+            self.control_mode_label.setText("POSTURA: ROTACIÓN")
             self.control_mode_label.setStyleSheet("""
                 color: #ffffff;
                 font-size: 16px;
@@ -845,19 +762,8 @@ class QuadControlGUI(QMainWindow):
                 background-color: #9b59b6;
                 border-radius: 8px;
             """)
-        elif self.body_pose_mode == "routine":
-            rid, label = self.ROUTINES[self.routine_index]
-            self.control_mode_label.setText(f"RUTINA: {label.upper()}  ▶")
-            self.control_mode_label.setStyleSheet("""
-                color: #222f3e;
-                font-size: 16px;
-                font-weight: bold;
-                padding: 8px 15px;
-                background-color: #e17055;
-                border-radius: 8px;
-            """)
         else:
-            self.control_mode_label.setText("CONTROL DE VELOCIDAD  ▶")
+            self.control_mode_label.setText("CONTROL DE VELOCIDAD")
             self.control_mode_label.setStyleSheet("""
                 color: #feca57;
                 font-size: 16px;
@@ -867,6 +773,7 @@ class QuadControlGUI(QMainWindow):
                 border: 1px solid #bdc3c7;
                 border-radius: 8px;
             """)
+
 
     def on_speed_changed(self):
         """Update speed label"""
@@ -903,34 +810,41 @@ class QuadControlGUI(QMainWindow):
         rt_pressed_now = state.get("rt", 0.0) > 0.5 or bool(current_buttons & (1 << 6))
 
         # --- CONTROL DE POSTURA (LB) ---
-        # Cicla entre: velocity → translation → rotation → routine → velocity
+        # Cicla entre: velocity -> translation -> rotation -> velocity
+        old_body_pose = self.body_pose_mode
         if lb_pressed_now and not lb_pressed_prev:
-            self._cycle_body_pose_mode()
+            if self.body_pose_mode == "velocity":
+                self.body_pose_mode = "translation"
+            elif self.body_pose_mode == "translation":
+                self.body_pose_mode = "rotation"
+            else:
+                self.body_pose_mode = "velocity"
+
+        if old_body_pose != self.body_pose_mode:
+            self.update_control_mode_indicator()
 
         # --- OPCIONES INDEPENDIENTES (Y, A, B) ---
-
         if y_pressed_now and not y_pressed_prev:
-            if self.body_pose_mode == "routine":
-                self._launch_routine()
-            else:
-                self.strafe_check.setChecked(not self.strafe_check.isChecked())
-
+            self.strafe_check.setChecked(not self.strafe_check.isChecked())
+            
         if a_pressed_now and not a_pressed_prev:
             self.always_step_check.setChecked(not self.always_step_check.isChecked())
-
+            
         if b_pressed_now and not b_pressed_prev:
             self.record_check.setChecked(not self.record_check.isChecked())
 
         # --- MODOS RÁPIDOS (X = Detener, RB = Apagar) ---
         if x_pressed_now and not x_pressed_prev:
             self.set_mode("stop")
-
+            
+        # Asignamos "Apagar" a RB porque RT ahora controla la velocidad
         if rb_pressed_now and not rb_pressed_prev:
             self.set_mode("off")
 
         self.prev_buttons = current_buttons
 
         # --- Actualizar la posición visual de los joysticks ---
+        # Si el mouse está controlando un joystick, el gamepad no lo pisa
         if not self.joy_L._mouse_active:
             self.joy_L.set_values(state["lx"], -state["ly"])
             if not self._mouse_controlling:
@@ -942,35 +856,17 @@ class QuadControlGUI(QMainWindow):
                 self.joy_state["rx"] = state["rx"]
                 self.joy_state["ry"] = state["ry"]
         self.gamepad_indicator.set_active(True)
-
-        # --- SELECCIÓN DE MODO (Cruceta) — flancos independientes ---
-        hat_up    = state.get("hat_up",    False)
-        hat_down  = state.get("hat_down",  False)
-        hat_left  = state.get("hat_left",  False)
-        hat_right = state.get("hat_right", False)
-        prev_hat_up    = self.prev_hat.get("up",    False)
-        prev_hat_down  = self.prev_hat.get("down",  False)
-        prev_hat_left  = self.prev_hat.get("left",  False)
-        prev_hat_right = self.prev_hat.get("right", False)
-
-        if self.body_pose_mode == "routine":
-            # ◀ / ▶ navegan entre rutinas, flanco de subida
-            if hat_left  and not prev_hat_left:
-                self._select_routine((self.routine_index - 1) % len(self.ROUTINES))
-            if hat_right and not prev_hat_right:
-                self._select_routine((self.routine_index + 1) % len(self.ROUTINES))
-            # ▲ / ▼ no tienen función aquí — usa LB para salir de routine
-        else:
-            # Comportamiento original con flancos
-            if hat_up    and not prev_hat_up:    self.set_mode("idle")
-            if hat_down  and not prev_hat_down:  self.set_mode("situp")
-            if hat_right and not prev_hat_right: self.set_mode("walk")
-            if hat_left  and not prev_hat_left:  self.set_mode("pronk")
-
-        self.prev_hat = {
-            "up": hat_up, "down": hat_down,
-            "left": hat_left, "right": hat_right
-        }
+        
+        # --- SELECCIÓN DE MODO (Cruceta original) ---
+        if state["hat_pressed"]:
+            hat_x = state["hat_x"]
+            hat_y = state["hat_y"]
+            if abs(hat_y) > abs(hat_x):
+                if hat_y > 0: self.set_mode("idle")
+                elif hat_y < 0: self.set_mode("situp")
+            else:
+                if hat_x > 0: self.set_mode("walk")
+                elif hat_x < 0: self.set_mode("pronk")
 
         # --- ¡CORRECCIÓN! Ajuste de velocidad con LT (-) y RT (+) ---
         current_time = time.time()
@@ -988,61 +884,11 @@ class QuadControlGUI(QMainWindow):
     def set_mode(self, mode: str):
         """Set specific mode and update radio button"""
         if mode in self.mode_radios and mode != self.mode:
-            safe_modes = ["idle", "walk", "pronk", "situp", "stop", "off", "routine"]
+            # Validación: solo permitir si es un modo seguro
+            safe_modes = ["idle", "walk", "pronk", "situp","stop", "off"]
             if mode in safe_modes:
                 self.mode_radios[mode].setChecked(True)
                 self.mode = mode
-                if mode != "routine":
-                    self.routine_active = False
-                    self.routine_holding = False
-                    self.routine_status_label.setText("Sin rutina activa")
-                    self.routine_status_label.setStyleSheet("color:#7f8c8d; font-size:10px;")
-
-    def _cycle_body_pose_mode(self):
-        """Cicla entre velocity → translation → rotation → routine → velocity.
-        Llamado por clic en el label O por LB en el gamepad."""
-        if self.body_pose_mode == "velocity":
-            self.body_pose_mode = "translation"
-        elif self.body_pose_mode == "translation":
-            self.body_pose_mode = "rotation"
-        elif self.body_pose_mode == "rotation":
-            self.body_pose_mode = "routine"
-            # Al entrar en routine, sincronizar el modo del robot
-        else:
-            self.body_pose_mode = "velocity"
-            # Al salir de routine: volver a idle SOLO si no hay una pose mantenida.
-            # Si routine_holding=True, el robot sigue en kRoutine con hold_forever —
-            # no interrumpir la pose; el usuario puede seguir usando el joystick
-            # en modo velocidad mientras el robot mantiene la postura.
-            if self.mode == "routine" and not self.routine_holding:
-                self.set_mode("idle")
-        self.update_control_mode_indicator()
-
-    def _select_routine(self, idx: int):
-        """Selecciona una rutina por índice y actualiza el label si estamos en modo routine."""
-        if self.routine_active and not self.routine_holding:
-            # Bloquear solo mientras la rutina está en progreso, no en hold.
-            for i, btn in enumerate(self.routine_buttons):
-                btn.setChecked(i == self.routine_index)
-            return
-        self.routine_index = idx
-        for i, btn in enumerate(self.routine_buttons):
-            btn.setChecked(i == idx)
-        if self.body_pose_mode == "routine":
-            self.update_control_mode_indicator()
-
-    def _launch_routine(self):
-        """Entra en modo rutina y activa la rutina seleccionada"""
-        if self.mode != "routine":
-            self.set_mode("routine")
-        self.routine_active = True
-        self.routine_holding = False    # nueva ejecución, ya no estamos en hold
-        self.routine_was_active = False  # limpiar para evitar falso positivo inmediato
-        self.routine_active_id = self.ROUTINES[self.routine_index][0]  # confirmar selección
-        label = self.ROUTINES[self.routine_index][1]
-        self.routine_status_label.setText(f"Ejecutando: {label}...")
-        self.routine_status_label.setStyleSheet(
-            "color:#feca57; font-size:10px; font-weight:bold;")
 
     # --- Control por mouse ---
     def _on_mouse_joy_L(self, x: float, y: float):
@@ -1086,7 +932,7 @@ class QuadControlGUI(QMainWindow):
                 "translation": [
                     j["ly"] * CMD_MAX_POSE_X,      # Stick L Y  → adelante/atrás
                     j["lx"] * CMD_MAX_POSE_Y,      # Stick L X  → izquierda/derecha
-                    -j["ry"] * CMD_MAX_POSE_Z        # Stick R Y  → altura
+                    j["ry"] * CMD_MAX_POSE_Z        # Stick R Y  → altura
                 ],
                 "so3": {
                     "w": 1.0,
@@ -1125,13 +971,12 @@ class QuadControlGUI(QMainWindow):
         moving = any(abs(x) > 0.025 for x in v_R + w_R)
 
         mode_map = {
-            "off":     "stopped",
-            "stop":    "zero_velocity",
-            "idle":    "rest",
-            "walk":    "walk" if (moving or self.always_step) else "rest",
-            "pronk":   "jump",
-            "situp":   "situp",
-            "routine": "routine",
+            "off": "stopped",
+            "stop": "zero_velocity",
+            "idle": "rest",
+            "walk": "walk" if (moving or self.always_step) else "rest",
+            "pronk": "jump",
+            "situp": "situp"
         }
 
         command = {
@@ -1145,20 +990,15 @@ class QuadControlGUI(QMainWindow):
 
         if pose:
             command["command"]["rest"] = {"offset_RB": pose}
-
+        
         if self.mode == "pronk":
             command["command"]["jump"] = {
                 "acceleration": 8.0,
                 "repeat": True
             }
-
+        
         if self.mode == "situp":
             command["command"]["situp"] = {}
-
-        if self.mode == "routine" and self.routine_active:
-            # Enviar el id de la rutina que está corriendo, NO el del selector.
-            # routine_active_id solo se actualiza en _launch_routine() con Y.
-            command["command"]["routine"] = {"routine_id": self.routine_active_id}
 
         # Update display
         self.update_display_signal.emit(
@@ -1221,9 +1061,6 @@ class QuadControlGUI(QMainWindow):
             robot_info = state.get("robot", {})
             
             self.robot_state.mode = status.get("mode", "unknown")
-            # Leer done desde state.routine — más fiable que esperar mode==rest
-            routine_state = state.get("routine", {})
-            self.robot_state.routine_done = routine_state.get("done", False)
             self.robot_state.voltage = robot_info.get("voltage", 0.0)
             self.robot_state.max_temp = max(
                 (j.get("temperature_C", 0) for j in joints), 
@@ -1232,49 +1069,6 @@ class QuadControlGUI(QMainWindow):
             self.robot_state.joints_count = len(joints)
             self.robot_state.fault = status.get("fault", "")
             self.robot_state.connected = True
-
-            # Rutinas con hold_forever (kSentarse, kLevantarse):
-            # done nunca llega a true — se detectan por routine_active_id.
-            HOLD_ROUTINES = ("kSentarse", "kLevantarse")
-
-            if self.robot_state.mode == "routine" and self.routine_active:
-                self.routine_was_active = True
-                if self.routine_active_id in HOLD_ROUTINES and not self.routine_holding:
-                    self.routine_holding = True
-                    label = next(
-                        (lbl for rid, lbl in self.ROUTINES
-                         if rid == self.routine_active_id),
-                        self.routine_active_id
-                    )
-                    self.routine_status_label.setText(f"⏸ Pose: {label}")
-                    self.routine_status_label.setStyleSheet(
-                        "color:#74b9ff; font-size:10px; font-weight:bold;")
-
-            # Rutinas normales (kFlexion, kBaile): detectar fin via routine.done
-            # en la telemetría. El controlador se queda en kRoutine con done=true
-            # manteniendo la última posición — no transiciona a kRest solo.
-            # La GUI detecta done=true, limpia los flags, y manda mode:rest.
-            if self.routine_active and self.routine_was_active and \
-                    not self.routine_holding and \
-                    self.robot_state.routine_done:
-                self.routine_active = False
-                self.routine_was_active = False
-                self.routine_holding = False
-                # Mandar mode:rest explícitamente para que el robot vuelva a stand.
-                # Se hace forzando self.mode = "idle" ANTES del siguiente build_command.
-                self.mode = "idle"
-                if "idle" in self.mode_radios:
-                    self.mode_radios["idle"].setChecked(True)
-                # NO cambiar body_pose_mode — el usuario se queda en modo rutinas
-                # para poder lanzar otra rutina sin salir.
-                label = next(
-                    (lbl for rid, lbl in self.ROUTINES
-                     if rid == self.routine_active_id),
-                    self.routine_active_id
-                )
-                self.routine_status_label.setText(f"✓ {label} completada")
-                self.routine_status_label.setStyleSheet(
-                    "color:#2ecc71; font-size:10px; font-weight:bold;")
             
             self.battery_widget.set_voltage(self.robot_state.voltage)
             
