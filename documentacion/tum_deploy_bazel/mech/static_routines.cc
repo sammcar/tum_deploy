@@ -221,121 +221,151 @@ std::vector<RoutineStep> StaticRoutines::BuildBaile() const {
   return seq;
 }
 
+// RUTINA DE ACOSTARSE — pendiente de tuning. Conservada para uso futuro.
+// std::vector<RoutineStep> StaticRoutines::BuildSentarse() const {
+//   // Meta: acostar el robot con la panza apoyada en el suelo y patas en el aire.
+//   //
+//   // Dos fases:
+//   //   Fase 1 (pasos 1-6): replica el código original — patas se doblan y retroceden.
+//   //   Fase 2 (pasos 7-12): descenso del cuerpo combinando body_offset.z (baja)
+//   //     y body_offset.x creciente (adelante). El cuerpo se desplaza sobre las patas,
+//   //     que quedan libres hacia atrás sin necesidad de rotación.
+//   //
+//   // Regla de seguridad: z_pie_B = (0.305 + z_add) - D >= 0.005m
+//   //
+//   // Verificación de clamps (z_pie_B front / rear):
+//   //   Paso 1:  0.295 / 0.235 ✓
+//   //   Paso 2:  0.295 / 0.235 ✓
+//   //   Paso 3:  0.245 / 0.225 ✓
+//   //   Paso 4:  0.145 / 0.115 ✓
+//   //   Paso 5:  0.105 / 0.075 ✓
+//   //   Paso 6:  0.095 / 0.065 ✓
+//   //   Paso 7:  0.070 / 0.040 ✓  x=+0.060
+//   //   Paso 8:  0.010 / 0.010 ✓  x=+0.090
+//   //   Paso 9:  0.010 / 0.010 ✓  x=+0.110
+//   //   Paso 10: 0.010 / 0.010 ✓  x=+0.120
+//   //   Paso 11: 0.010 / 0.010 ✓  x=+0.100
+//   //   Paso 12: 0.015 / 0.015 ✓  x=+0.060  hold_forever
+// 
+//   std::vector<RoutineStep> seq;
+// 
+//   // --- FASE 1: doblar patas y preparar equilibrio ---
+// 
+//   // Paso 1 — traseras empiezan a doblarse. D=0.010 para pasar max_z_B.
+//   {
+//     Sophus::SE3d b;
+//     b.translation() = Eigen::Vector3d(0, 0, 0.010);
+//     seq.push_back(MakeStep(0, 0, 0, 0, -0.060, 1.5, b));
+//   }
+// 
+//   // Paso 2 — todas retroceden, traseras siguen dobladas.
+//   {
+//     Sophus::SE3d b;
+//     b.translation() = Eigen::Vector3d(0, 0, 0.010);
+//     seq.push_back(MakeStep(-0.050, -0.050, 0, 0, -0.060, 2.0, b));
+//   }
+// 
+//   // Paso 3 — retroceso mayor, delanteras empiezan a doblarse.
+//   seq.push_back(MakeStep(-0.080, -0.080, 0, -0.060, -0.080, 2.0));
+// 
+//   // Paso 4 — patas muy dobladas, pitch leve.
+//   {
+//     Sophus::SE3d b;
+//     b.so3() = Sophus::SO3d(
+//         base::Quaternion::FromEuler(0.0, deg2rad(-3.0), 0.0).eigen());
+//     seq.push_back(MakeStep(-0.110, -0.110, 0, -0.160, -0.190, 2.0, b));
+//   }
+// 
+//   // Paso 5 — cuerpo empieza a bajar y avanza.
+//   {
+//     Sophus::SE3d b;
+//     b.translation() = Eigen::Vector3d(0.020, 0, 0.040);
+//     b.so3() = Sophus::SO3d(
+//         base::Quaternion::FromEuler(0.0, deg2rad(-3.0), 0.0).eigen());
+//     seq.push_back(MakeStep(-0.110, -0.110, 0, -0.160, -0.190, 2.5, b));
+//   }
+// 
+//   // Paso 6 — apertura lateral inicial, patas aún más dobladas.
+//   {
+//     Sophus::SE3d b;
+//     b.translation() = Eigen::Vector3d(0.020, 0, 0.040);
+//     seq.push_back(MakeStep(-0.110, -0.110, 0.020, -0.170, -0.200, 1.5, b));
+//   }
+// 
+//   // --- FASE 2: descenso con traslación X creciente ---
+//   // El cuerpo avanza sobre las patas (X+) mientras baja (Z+).
+//   // Las patas traseras quedan libres hacia atrás sin necesidad de rotación.
+// 
+//   // Paso 7 — cuerpo avanza y baja un poco. D=0.070, x=+0.060.
+//   {
+//     Sophus::SE3d b;
+//     b.translation() = Eigen::Vector3d(0.060, 0, 0.070);
+//     seq.push_back(MakeStep(-0.110, -0.120, 0.030, -0.165, -0.195, 2.0, b));
+//   }
+// 
+//   // Paso 8 — cuerpo avanza más. D=0.110, x=+0.090.
+//   {
+//     Sophus::SE3d b;
+//     b.translation() = Eigen::Vector3d(0.090, 0, 0.110);
+//     seq.push_back(MakeStep(-0.100, -0.130, 0.040, -0.185, -0.185, 2.0, b));
+//   }
+// 
+//   // Paso 9 — descenso fuerte. D=0.160, x=+0.110.
+//   {
+//     Sophus::SE3d b;
+//     b.translation() = Eigen::Vector3d(0.110, 0, 0.160);
+//     seq.push_back(MakeStep(-0.090, -0.140, 0.050, -0.135, -0.135, 2.0, b));
+//   }
+// 
+//   // Paso 10 — casi en el suelo. D=0.210, x=+0.120.
+//   {
+//     Sophus::SE3d b;
+//     b.translation() = Eigen::Vector3d(0.120, 0, 0.210);
+//     seq.push_back(MakeStep(-0.080, -0.150, 0.060, -0.085, -0.085, 2.0, b));
+//   }
+// 
+//   // Paso 11 — cuerpo casi plano, x empieza a reducirse. D=0.250, x=+0.100.
+//   {
+//     Sophus::SE3d b;
+//     b.translation() = Eigen::Vector3d(0.100, 0, 0.250);
+//     seq.push_back(MakeStep(-0.070, -0.160, 0.065, -0.045, -0.045, 2.0, b));
+//   }
+// 
+//   // Paso 12 — postura final acostada. D=0.270, x=+0.060. hold_forever.
+//   // Panza apoyada en el suelo, coxas abiertas, patas en el aire.
+//   {
+//     Sophus::SE3d b;
+//     b.translation() = Eigen::Vector3d(0.060, 0, 0.270);
+//     RoutineStep s = MakeStep(-0.060, -0.170, 0.070, -0.020, -0.020, 1.0, b);
+//     s.hold_forever = true;
+//     seq.push_back(s);
+//   }
+// 
+//   return seq;
+// }
+// 
+
 std::vector<RoutineStep> StaticRoutines::BuildSentarse() const {
-  // Meta: acostar el robot con la panza apoyada en el suelo y patas en el aire.
+  // Sentado de perro: parte trasera baja al suelo, delanteras rectas.
   //
-  // Dos fases:
-  //   Fase 1 (pasos 1-6): replica el código original — patas se doblan y retroceden.
-  //   Fase 2 (pasos 7-12): descenso del cuerpo combinando body_offset.z (baja)
-  //     y body_offset.x creciente (adelante). El cuerpo se desplaza sobre las patas,
-  //     que quedan libres hacia atrás sin necesidad de rotación.
+  // Mecanismo: body_offset combina pitch positivo (nariz sube, cola baja)
+  // con traslación Z positiva (cuerpo baja globalmente). El pitch hace que
+  // la parte trasera del cuerpo se acerque al suelo mientras las patas
+  // delanteras permanecen extendidas soportando el frente.
+  // Las patas traseras se doblan naturalmente al bajar las caderas.
+  // Las patas delanteras se mueven levemente hacia adelante para equilibrio.
   //
-  // Regla de seguridad: z_pie_B = (0.305 + z_add) - D >= 0.005m
-  //
-  // Verificación de clamps (z_pie_B front / rear):
-  //   Paso 1:  0.295 / 0.235 ✓
-  //   Paso 2:  0.295 / 0.235 ✓
-  //   Paso 3:  0.245 / 0.225 ✓
-  //   Paso 4:  0.145 / 0.115 ✓
-  //   Paso 5:  0.105 / 0.075 ✓
-  //   Paso 6:  0.095 / 0.065 ✓
-  //   Paso 7:  0.070 / 0.040 ✓  x=+0.060
-  //   Paso 8:  0.010 / 0.010 ✓  x=+0.090
-  //   Paso 9:  0.010 / 0.010 ✓  x=+0.110
-  //   Paso 10: 0.010 / 0.010 ✓  x=+0.120
-  //   Paso 11: 0.010 / 0.010 ✓  x=+0.100
-  //   Paso 12: 0.015 / 0.015 ✓  x=+0.060  hold_forever
+  // Postura final: hold_forever hasta que el usuario lance kLevantarse.
 
   std::vector<RoutineStep> seq;
 
-  // --- FASE 1: doblar patas y preparar equilibrio ---
-
-  // Paso 1 — traseras empiezan a doblarse. D=0.010 para pasar max_z_B.
+  // Paso único — pitch +7°, D=0.005. hold_forever.
   {
     Sophus::SE3d b;
-    b.translation() = Eigen::Vector3d(0, 0, 0.010);
-    seq.push_back(MakeStep(0, 0, 0, 0, -0.060, 1.5, b));
-  }
-
-  // Paso 2 — todas retroceden, traseras siguen dobladas.
-  {
-    Sophus::SE3d b;
-    b.translation() = Eigen::Vector3d(0, 0, 0.010);
-    seq.push_back(MakeStep(-0.050, -0.050, 0, 0, -0.060, 2.0, b));
-  }
-
-  // Paso 3 — retroceso mayor, delanteras empiezan a doblarse.
-  seq.push_back(MakeStep(-0.080, -0.080, 0, -0.060, -0.080, 2.0));
-
-  // Paso 4 — patas muy dobladas, pitch leve.
-  {
-    Sophus::SE3d b;
+    b.translation() = Eigen::Vector3d(0, 0, 0.005);
     b.so3() = Sophus::SO3d(
-        base::Quaternion::FromEuler(0.0, deg2rad(-3.0), 0.0).eigen());
-    seq.push_back(MakeStep(-0.110, -0.110, 0, -0.160, -0.190, 2.0, b));
-  }
-
-  // Paso 5 — cuerpo empieza a bajar y avanza.
-  {
-    Sophus::SE3d b;
-    b.translation() = Eigen::Vector3d(0.020, 0, 0.040);
-    b.so3() = Sophus::SO3d(
-        base::Quaternion::FromEuler(0.0, deg2rad(-3.0), 0.0).eigen());
-    seq.push_back(MakeStep(-0.110, -0.110, 0, -0.160, -0.190, 2.5, b));
-  }
-
-  // Paso 6 — apertura lateral inicial, patas aún más dobladas.
-  {
-    Sophus::SE3d b;
-    b.translation() = Eigen::Vector3d(0.020, 0, 0.040);
-    seq.push_back(MakeStep(-0.110, -0.110, 0.020, -0.170, -0.200, 1.5, b));
-  }
-
-  // --- FASE 2: descenso con traslación X creciente ---
-  // El cuerpo avanza sobre las patas (X+) mientras baja (Z+).
-  // Las patas traseras quedan libres hacia atrás sin necesidad de rotación.
-
-  // Paso 7 — cuerpo avanza y baja un poco. D=0.070, x=+0.060.
-  {
-    Sophus::SE3d b;
-    b.translation() = Eigen::Vector3d(0.060, 0, 0.070);
-    seq.push_back(MakeStep(-0.110, -0.120, 0.030, -0.165, -0.195, 2.0, b));
-  }
-
-  // Paso 8 — cuerpo avanza más. D=0.110, x=+0.090.
-  {
-    Sophus::SE3d b;
-    b.translation() = Eigen::Vector3d(0.090, 0, 0.110);
-    seq.push_back(MakeStep(-0.100, -0.130, 0.040, -0.185, -0.185, 2.0, b));
-  }
-
-  // Paso 9 — descenso fuerte. D=0.160, x=+0.110.
-  {
-    Sophus::SE3d b;
-    b.translation() = Eigen::Vector3d(0.110, 0, 0.160);
-    seq.push_back(MakeStep(-0.090, -0.140, 0.050, -0.135, -0.135, 2.0, b));
-  }
-
-  // Paso 10 — casi en el suelo. D=0.210, x=+0.120.
-  {
-    Sophus::SE3d b;
-    b.translation() = Eigen::Vector3d(0.120, 0, 0.210);
-    seq.push_back(MakeStep(-0.080, -0.150, 0.060, -0.085, -0.085, 2.0, b));
-  }
-
-  // Paso 11 — cuerpo casi plano, x empieza a reducirse. D=0.250, x=+0.100.
-  {
-    Sophus::SE3d b;
-    b.translation() = Eigen::Vector3d(0.100, 0, 0.250);
-    seq.push_back(MakeStep(-0.070, -0.160, 0.065, -0.045, -0.045, 2.0, b));
-  }
-
-  // Paso 12 — postura final acostada. D=0.270, x=+0.060. hold_forever.
-  // Panza apoyada en el suelo, coxas abiertas, patas en el aire.
-  {
-    Sophus::SE3d b;
-    b.translation() = Eigen::Vector3d(0.060, 0, 0.270);
-    RoutineStep s = MakeStep(-0.060, -0.170, 0.070, -0.020, -0.020, 1.0, b);
+        base::Quaternion::FromEuler(0.0, deg2rad(7.0), 0.0).eigen());
+    RoutineStep s = MakeStep(0, 0, 0, 0, 0, 2.0, b);
     s.hold_forever = true;
     seq.push_back(s);
   }
@@ -343,35 +373,19 @@ std::vector<RoutineStep> StaticRoutines::BuildSentarse() const {
   return seq;
 }
 
+// LEVANTARSE (par de acostarse) — pendiente de tuning.
+// (código comentado arriba)
+
 std::vector<RoutineStep> StaticRoutines::BuildLevantarse() const {
-  // Inverso de BuildSentarse: sube el cuerpo en tres pasos.
-  // Asume que el robot arranca en la postura final de BuildSentarse
-  // (body_offset.z ≈ 0.155m, x_rear=-0.110, x_front=+0.040).
-  // Cada paso reduce D y devuelve las patas a la posición neutra.
+  // Inverso exacto de BuildSentarse.
+  // Desde hold de sentarse (pitch=+12°, D=0.025, x_front=+0.010):
+  // Paso 1 replica el paso 1 de sentarse, luego vuelve a stand. hold_forever.
 
   std::vector<RoutineStep> seq;
 
-  // Paso 1 — desde sentado profundo, comenzar a subir.
+  // Paso único — inverso exacto: pitch 0°, D=0. hold_forever.
   {
-    Sophus::SE3d b;
-    b.translation() = Eigen::Vector3d(0.020, 0, 0.155);
-    b.so3() = Sophus::SO3d(
-        base::Quaternion::FromEuler(0.0, deg2rad(-3.0), 0.0).eigen());
-    seq.push_back(MakeStep(0.040, -0.110, 0, 0, 0, 0.5, b));  // breve hold
-  }
-
-  // Paso 2 — postura intermedia: cuerpo sube a D=0.080, patas vuelven parcialmente.
-  {
-    Sophus::SE3d b;
-    b.translation() = Eigen::Vector3d(0.010, 0, 0.080);
-    seq.push_back(MakeStep(0.020, -0.060, 0, 0, 0, 2.0, b));
-  }
-
-  // Paso 3 — volver a stand height con hold_forever: el controlador mantiene
-  // esta pose (stand_height, patas neutras) sin transicionar a kRest.
-  // La GUI puede lanzar kSentarse o cambiar de modo para salir.
-  {
-    RoutineStep s = MakeStep(0, 0, 0, 0, 0, 1.5);
+    RoutineStep s = MakeStep(0, 0, 0, 0, 0, 2.0);
     s.hold_forever = true;
     seq.push_back(s);
   }
