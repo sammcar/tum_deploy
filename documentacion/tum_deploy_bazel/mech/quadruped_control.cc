@@ -41,7 +41,7 @@
 
 static constexpr bool kSimulationMode = false;  // true = escribe en SHM para DART
                                                 // false = comportamiento normal
-static constexpr bool kUseImu = false;          // false = IMU siempre cero (útil si el
+static constexpr bool kUseImu = true;          // false = IMU siempre cero (útil si el
                                                 // sensor no está disponible o se ignora)
 
 namespace pl = std::placeholders;
