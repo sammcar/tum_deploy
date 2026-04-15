@@ -39,8 +39,10 @@
 #include "robot_types.hpp"   // Misma estructura que usa main.cpp
 #include "mech/static_routines.h" 
 
-static constexpr bool kSimulationMode = false;  // true = escribe en SHM para DART
+static constexpr bool kSimulationMode = true;  // true = escribe en SHM para DART
                                                 // false = comportamiento normal
+static constexpr bool kUseImu = false;          // false = IMU siempre cero (útil si el
+                                                // sensor no está disponible o se ignora)
 
 namespace pl = std::placeholders;
 
@@ -389,10 +391,12 @@ class QuadrupedControl::Impl {
 
     timing_.finish_status();
 
-    if (std::abs(imu_data_.euler_deg.roll) > 45 ||
-        std::abs(imu_data_.euler_deg.pitch) > 45) {
-      if (status_.mode != QM::kFault) {
-        Fault("Tipping over");
+    if (kUseImu) {
+      if (std::abs(imu_data_.euler_deg.roll) > 45 ||
+          std::abs(imu_data_.euler_deg.pitch) > 45) {
+        if (status_.mode != QM::kFault) {
+          Fault("Tipping over");
+        }
       }
     }
 
@@ -653,23 +657,34 @@ class QuadrupedControl::Impl {
     Sophus::SE3d CB{
       Sophus::SO3d(),
           -config_.center_of_mass_B};
-    Sophus::SE3d AC{
-      Sophus::SO3d(imu_data_.attitude.eigen()),
-          Eigen::Vector3d(),
-    };
 
-    frame_AB.pose = AC * CB;
-    frame_AB.w = (M_PI / 180.0) * imu_data_.rate_dps;
+    if (kUseImu) {
+      Sophus::SE3d AC{
+        Sophus::SO3d(imu_data_.attitude.eigen()),
+            Eigen::Vector3d(),
+      };
+      frame_AB.pose = AC * CB;
+      frame_AB.w = (M_PI / 180.0) * imu_data_.rate_dps;
+    } else {
+      // IMU deshabilitado: orientación identidad, sin velocidad angular.
+      frame_AB.pose = CB;
+      frame_AB.w = Eigen::Vector3d::Zero();
+    }
 
     // Now the M frame (CoM)
     auto& frame_MB = status_.state.robot.frame_MB;
-    auto axis_MC = imu_data_.attitude.euler_rad();
-    axis_MC.yaw = 0.0;
-    Sophus::SE3d MC{
-      Sophus::SO3d(base::Quaternion::FromEuler(axis_MC).eigen()),
-          Eigen::Vector3d(),
-    };
-    frame_MB.pose = MC * CB;
+    if (kUseImu) {
+      auto axis_MC = imu_data_.attitude.euler_rad();
+      axis_MC.yaw = 0.0;
+      Sophus::SE3d MC{
+        Sophus::SO3d(base::Quaternion::FromEuler(axis_MC).eigen()),
+            Eigen::Vector3d(),
+      };
+      frame_MB.pose = MC * CB;
+    } else {
+      // IMU deshabilitado: CoM frame igual que frame_AB (sin rotación).
+      frame_MB.pose = CB;
+    }
 
     // Do terrain.
     UpdateTerrain();
@@ -2117,17 +2132,31 @@ void DoControl_StandUp_Prepositioning() {
         // --- INICIO BLOQUE DE DEPURACIÓN IMU ---
     static int imu_print_counter = 0;
     if (imu_print_counter++ % 200 == 0) { // Imprime 2 veces por segundo (en un lazo de 400Hz)
-      std::cout << "\n--- DATOS DEL IMU EXTERNO ---\n"
-                << "Roll:   " << imu_data_.euler_deg.roll << " grados\n"
-                << "Pitch:  " << imu_data_.euler_deg.pitch << " grados\n"
-                << "Yaw:    " << imu_data_.euler_deg.yaw << " grados\n"
-                << "Gyro X: " << imu_data_.rate_dps.x() << " dps\n"
-                << "Gyro Y: " << imu_data_.rate_dps.y() << " dps\n"
-                << "Gyro Z: " << imu_data_.rate_dps.z() << " dps\n"
-                << "Accel X: " << imu_data_.accel_mps2.x() << " m/s^2\n"
-                << "Accel Y: " << imu_data_.accel_mps2.y() << " m/s^2\n"
-                << "Accel Z: " << imu_data_.accel_mps2.z() << " m/s^2\n"
-                << "-----------------------------\n";
+      if (kUseImu) {
+        std::cout << "\n--- DATOS DEL IMU EXTERNO ---\n"
+                  << "Roll:   " << imu_data_.euler_deg.roll << " grados\n"
+                  << "Pitch:  " << imu_data_.euler_deg.pitch << " grados\n"
+                  << "Yaw:    " << imu_data_.euler_deg.yaw << " grados\n"
+                  << "Gyro X: " << imu_data_.rate_dps.x() << " dps\n"
+                  << "Gyro Y: " << imu_data_.rate_dps.y() << " dps\n"
+                  << "Gyro Z: " << imu_data_.rate_dps.z() << " dps\n"
+                  << "Accel X: " << imu_data_.accel_mps2.x() << " m/s^2\n"
+                  << "Accel Y: " << imu_data_.accel_mps2.y() << " m/s^2\n"
+                  << "Accel Z: " << imu_data_.accel_mps2.z() << " m/s^2\n"
+                  << "-----------------------------\n";
+      } else {
+        std::cout << "\n--- DATOS DEL IMU EXTERNO (DESHABILITADO) ---\n"
+                  << "Roll:   0 grados\n"
+                  << "Pitch:  0 grados\n"
+                  << "Yaw:    0 grados\n"
+                  << "Gyro X: 0 dps\n"
+                  << "Gyro Y: 0 dps\n"
+                  << "Gyro Z: 0 dps\n"
+                  << "Accel X: 0 m/s^2\n"
+                  << "Accel Y: 0 m/s^2\n"
+                  << "Accel Z: 0 m/s^2\n"
+                  << "-----------------------------\n";
+      }
     }
 
   
