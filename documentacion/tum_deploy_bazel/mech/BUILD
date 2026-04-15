@@ -128,6 +128,16 @@ cc_binary(
     ],
 )
 
+cc_binary(
+    name = "tum_quad_terminal",
+    srcs = ["tum_quad_terminal.cpp"],
+    deps = [":mech", "@org_llvm_libcxx//:libcxx"],
+    copts = ["-std=c++17"] + select({
+        "//:raspberrypi": ["-DCOM_GITHUB_MJBOTS_RASPBERRYPI"],
+        "//conditions:default": [],
+    }),
+)
+
 pkg_tar(
     name = "tum_deploy",
     extension = "tar",
@@ -136,6 +146,7 @@ pkg_tar(
     srcs = [
         ":multiplex_tool",
         ":quadruped",
+        ":tum_quad_terminal", 
         "//utils:gui_assets",
     ],
     files = {
