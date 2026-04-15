@@ -39,9 +39,9 @@
 #include "robot_types.hpp"   // Misma estructura que usa main.cpp
 #include "mech/static_routines.h" 
 
-static constexpr bool kSimulationMode = true;  // true = escribe en SHM para DART
+static constexpr bool kSimulationMode = false;  // true = escribe en SHM para DART
                                                 // false = comportamiento normal
-static constexpr bool kUseImu = false;          // false = IMU siempre cero (útil si el
+static constexpr bool kUseImu = true;          // false = IMU siempre cero (útil si el
                                                 // sensor no está disponible o se ignora)
 
 namespace pl = std::placeholders;
