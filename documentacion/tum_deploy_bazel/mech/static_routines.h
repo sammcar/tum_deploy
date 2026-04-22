@@ -37,6 +37,7 @@ enum class RoutineId {
   kBaile,
   kSentarse,
   kLevantarse,
+  kSaludo,
 };
 
 // ---------------------------------------------------------------------------
@@ -105,6 +106,7 @@ class StaticRoutines {
   std::vector<RoutineStep> BuildBaile()                 const;
   std::vector<RoutineStep> BuildSentarse()              const;
   std::vector<RoutineStep> BuildLevantarse()            const;
+  std::vector<RoutineStep> BuildSaludo()                const;
 
   RoutineStep MakeStep(double x_front,    double x_rear,
                        double y_offset,

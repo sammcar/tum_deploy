@@ -1569,6 +1569,7 @@ void DoControl_StandUp_Prepositioning() {
         {"kBaile",      RoutineId::kBaile},
         {"kSentarse",   RoutineId::kSentarse},
         {"kLevantarse", RoutineId::kLevantarse},
+        {"kSaludo",     RoutineId::kSaludo},
       };
 
       auto it = kIdMap.find(rid_str);
@@ -2129,6 +2130,119 @@ void DoControl_StandUp_Prepositioning() {
               [](const auto& lhs, const auto& rhs) {
                 return lhs.id < rhs.id;
               });
+
+    // ── Override joints 4, 5, 6 (FR) para kSaludo pasos 1–7 ─────────────────
+    // Estrategia:
+    //   - Joints 4 y 5: en el primer ciclo del paso 1, capturar angle_deg y
+    //     torque_Nm que el IK calculó para la pose de sentarse. Congelar esos
+    //     valores para todos los ciclos 1–7. Los motores mantienen posición y
+    //     sostienen el peso con el torque correcto sin que el IK interfiera.
+    //   - Joint 6: override de interpolación del saludo.
+    //   - legs_R[FR] no se modifica → transición de vuelta a sentarse limpia.
+    const bool en_saludo =
+        (status_.mode == QM::kRoutine) &&
+        (current_command_.routine) &&
+        (current_command_.routine->routine_id == "kSaludo");
+
+    if (en_saludo) {
+      const int step = status_.state.routine.step;
+
+      // — Inicializar al entrar en kSaludo —
+      if (!saludo_base_set_) {
+        // Capturar ángulo base de la tibia (joint 6).
+        for (const auto& j : status_.state.joints) {
+          if (j.id == 6) { saludo_base_deg_ = j.angle_deg; break; }
+        }
+        saludo_base_set_   = true;
+        saludo_t_          = 0.0;
+        saludo_step_prev_  = step;
+        saludo_prev_delta_ = 0.0;
+        saludo_fr_captured_ = false;
+      }
+
+      // — Capturar joints 4 y 5 del IK en el primer ciclo del paso 1 —
+      // En este momento el robot está en la pose exacta de sentarse y el IK
+      // acaba de calcular los valores correctos de angle_deg y torque_Nm.
+      if (step == 1 && !saludo_fr_captured_) {
+        for (const auto& j : control_log_->joints) {
+          if (j.id == 4) {
+            saludo_j4_angle_ = j.angle_deg;
+            saludo_j4_torque_ = j.torque_Nm;
+          }
+          if (j.id == 5) {
+            saludo_j5_angle_ = j.angle_deg;
+            saludo_j5_torque_ = j.torque_Nm;
+          }
+        }
+        saludo_fr_captured_ = true;
+      }
+
+      // — Detectar cambio de paso → actualizar delta previo → resetear t —
+      if (step != saludo_step_prev_) {
+        static const double kTargetByStep[] =
+            {0.0, 25.0, 30.0, 15.0, 35.0, 15.0, 30.0, 0.0, 0.0};
+        if (saludo_step_prev_ >= 0 && saludo_step_prev_ <= 8)
+          saludo_prev_delta_ = kTargetByStep[saludo_step_prev_];
+        saludo_t_         = 0.0;
+        saludo_step_prev_ = step;
+      }
+
+      // — Avanzar interpolador de joint 6 —
+      static const double kDur[] = {1.5, 1.2, 0.4, 0.4, 0.4, 0.4, 0.4, 1.2, 1.5};
+      const double dur = (step >= 0 && step <= 8) ? kDur[step] : 1.0;
+      saludo_t_ = std::min(1.0, saludo_t_ + period_s_ / dur);
+      const double s = 0.5 * (1.0 - std::cos(saludo_t_ * M_PI));
+
+      double target_delta = 0.0;
+      switch (step) {
+        case 1: target_delta = 25.0; break;
+        case 2: target_delta = 30.0; break;
+        case 3: target_delta = 15.0; break;
+        case 4: target_delta = 35.0; break;
+        case 5: target_delta = 15.0; break;
+        case 6: target_delta = 30.0; break;
+        case 7: target_delta =  0.0; break;
+        default: break;
+      }
+
+      // — Aplicar override a los tres joints de FR —
+      if (step >= 1 && step <= 8) {
+        const double target_abs = saludo_base_deg_ + target_delta;
+        const double start_abs  = saludo_base_deg_ + saludo_prev_delta_;
+
+        for (auto& j : control_log_->joints) {
+          if (j.id == 4) {
+            j.angle_deg    = saludo_j4_angle_;   // congelado del IK
+            j.torque_Nm    = saludo_j4_torque_;  // sostenimiento correcto
+            j.velocity_dps = 0.0;
+            j.power        = true;
+          } else if (j.id == 5) {
+            j.angle_deg    = saludo_j5_angle_;   // congelado del IK
+            j.torque_Nm    = saludo_j5_torque_;  // sostenimiento correcto
+            j.velocity_dps = 0.0;
+            j.power        = true;
+          } else if (j.id == 6) {
+            j.angle_deg    = start_abs + s * (target_abs - start_abs);
+            j.torque_Nm    = 0.0;
+            j.velocity_dps = 0.0;
+            j.power        = true;
+          }
+        }
+      }
+    } else {
+      // Resetear todo al salir de kSaludo.
+      saludo_base_set_    = false;
+      saludo_fr_captured_ = false;
+      saludo_base_deg_    = 0.0;
+      saludo_t_           = 0.0;
+      saludo_step_prev_   = -1;
+      saludo_prev_delta_  = 0.0;
+      saludo_j4_angle_    = 0.0;
+      saludo_j4_torque_   = 0.0;
+      saludo_j5_angle_    = 0.0;
+      saludo_j5_torque_   = 0.0;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
         // --- INICIO BLOQUE DE DEPURACIÓN IMU ---
     static int imu_print_counter = 0;
     if (imu_print_counter++ % 200 == 0) { // Imprime 2 veces por segundo (en un lazo de 400Hz)
@@ -2429,6 +2543,19 @@ void DoControl_StandUp_Prepositioning() {
 
   boost::posix_time::ptime last_warn_timestamp_;
   std::optional<StaticRoutines> static_routines_;
+
+  // ── Estado override kSaludo ───────────────────────────────────────────────
+  bool   saludo_base_set_    = false;
+  double saludo_base_deg_    = 0.0;  // ángulo base tibia (joint 6) al arrancar
+  double saludo_t_           = 0.0;  // interpolador [0..1] por paso
+  int    saludo_step_prev_   = -1;
+  double saludo_prev_delta_  = 0.0;  // delta alcanzado al fin del paso anterior
+  bool   saludo_fr_captured_ = false;  // true cuando joints 4 y 5 fueron capturados
+  double saludo_j4_angle_    = 0.0;  // angle_deg del IK capturado para joint 4
+  double saludo_j4_torque_   = 0.0;  // torque_Nm del IK capturado para joint 4
+  double saludo_j5_angle_    = 0.0;  // angle_deg del IK capturado para joint 5
+  double saludo_j5_torque_   = 0.0;  // torque_Nm del IK capturado para joint 5
+  // ─────────────────────────────────────────────────────────────────────────
 };
 
 QuadrupedControl::QuadrupedControl(base::Context& context,

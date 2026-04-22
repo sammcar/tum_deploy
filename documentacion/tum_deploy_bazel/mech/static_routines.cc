@@ -179,6 +179,7 @@ std::vector<RoutineStep> StaticRoutines::BuildSequence(RoutineId id) const {
     case RoutineId::kBaile:      return BuildBaile();
     case RoutineId::kSentarse:   return BuildSentarse();
     case RoutineId::kLevantarse: return BuildLevantarse();
+    case RoutineId::kSaludo:     return BuildSaludo();
   }
   return {};
 }
@@ -359,12 +360,12 @@ std::vector<RoutineStep> StaticRoutines::BuildSentarse() const {
 
   std::vector<RoutineStep> seq;
 
-  // Paso único — pitch +7°, D=0.005. hold_forever.
+  // Paso único — pitch +12°, D=0.015. hold_forever.
   {
     Sophus::SE3d b;
-    b.translation() = Eigen::Vector3d(0, 0, 0.005);
+    b.translation() = Eigen::Vector3d(0, 0, 0.015);
     b.so3() = Sophus::SO3d(
-        base::Quaternion::FromEuler(0.0, deg2rad(7.0), 0.0).eigen());
+        base::Quaternion::FromEuler(0.0, deg2rad(12.0), 0.0).eigen());
     RoutineStep s = MakeStep(0, 0, 0, 0, 0, 2.0, b);
     s.hold_forever = true;
     seq.push_back(s);
@@ -386,6 +387,67 @@ std::vector<RoutineStep> StaticRoutines::BuildLevantarse() const {
   // Paso único — inverso exacto: pitch 0°, D=0. hold_forever.
   {
     RoutineStep s = MakeStep(0, 0, 0, 0, 0, 2.0);
+    s.hold_forever = true;
+    seq.push_back(s);
+  }
+
+  return seq;
+}
+
+std::vector<RoutineStep> StaticRoutines::BuildSaludo() const {
+  // Rutina de saludo con pata FR (leg_id=1, tibia=servo 6).
+  // Debe lanzarse desde el hold de kSentarse.
+  //
+  // El cuerpo y las 3 patas normales se gestionan aquí (frame R + body_offset).
+  // El motor 6 se gestiona en quadruped_control.cc leyendo routine.step.
+  //
+  // Mapeo de pasos:
+  //   Paso 0 (1.5s): Cuerpo traslada Y=+0.04 (alejarse de FR). Pitch +7°.
+  //   Paso 1 (1.2s): Cuerpo llegó. Motor 6 sube +25° (override en .cc).
+  //   Pasos 2-6    : Wave del motor 6: +5 -10 +10 -10 +5 (0.4s cada uno).
+  //   Paso 7 (1.2s): Motor 6 baja de vuelta a posición sentarse.
+  //   Paso 8 (1.5s): Cuerpo vuelve a Y=0. Pitch +7°. hold_forever.
+
+  std::vector<RoutineStep> seq;
+
+  // Pose base de sentarse — la misma que BuildSentarse() para consistencia.
+  auto sentarse_body = [&]() {
+    Sophus::SE3d b;
+    b.translation() = Eigen::Vector3d(0, 0, 0.015);
+    b.so3() = Sophus::SO3d(
+        base::Quaternion::FromEuler(0.0, deg2rad(12.0), 0.0).eigen());
+    return b;
+  };
+
+  // Pose con cuerpo desplazado en Y (lejos de pata FR = lado derecho).
+  // Y positivo en body_offset.translation → cuerpo va a la izquierda
+  // → peso se aleja de FR, FR puede levantar con seguridad.
+  auto saludo_body = [&]() {
+    Sophus::SE3d b;
+    b.translation() = Eigen::Vector3d(-0.03, -0.06, 0.005);
+    b.so3() = Sophus::SO3d(
+        base::Quaternion::FromEuler(0.0, deg2rad(12.0), 0.0).eigen());
+    return b;
+  };
+
+  // Paso 0 — traslación lateral del cuerpo. Motor 6 aún en reposo.
+  seq.push_back(MakeStep(0, 0, 0, 0, 0, 1.5, saludo_body()));
+
+  // Paso 1 — cuerpo ya desplazado, motor 6 empieza a subir (override .cc).
+  seq.push_back(MakeStep(0, 0, 0, 0, 0, 1.2, saludo_body()));
+
+  // Pasos 2-6 — wave. Cuerpo quieto. Motor 6 oscila (override .cc).
+  // duración corta para movimiento ágil.
+  for (int i = 0; i < 5; i++) {
+    seq.push_back(MakeStep(0, 0, 0, 0, 0, 0.4, saludo_body()));
+  }
+
+  // Paso 7 — motor 6 baja de vuelta a ángulo de sentarse (override .cc).
+  seq.push_back(MakeStep(0, 0, 0, 0, 0, 1.2, saludo_body()));
+
+  // Paso 8 — cuerpo vuelve a Y=0 con pitch de sentarse. hold_forever.
+  {
+    RoutineStep s = MakeStep(0, 0, 0, 0, 0, 1.5, sentarse_body());
     s.hold_forever = true;
     seq.push_back(s);
   }

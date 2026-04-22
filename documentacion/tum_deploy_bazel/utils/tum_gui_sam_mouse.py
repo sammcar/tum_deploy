@@ -335,6 +335,7 @@ class QuadControlGUI(QMainWindow):
             ("kBaile",      "Baile"),
             ("kSentarse",   "Sentarse"),
             ("kLevantarse", "Levantarse"),
+            ("kSaludo",     "Saludo 🐾"),
         ]
         self.routine_index = 0   # rutina seleccionada en el selector (UI)
         self.routine_active_id = self.ROUTINES[0][0]  # routine_id corriendo en el controlador
@@ -671,6 +672,17 @@ class QuadControlGUI(QMainWindow):
             routine_btn_layout.addWidget(btn, i // 2, i % 2)
             self.routine_buttons.append(btn)
         self.routine_buttons[0].setChecked(True)
+        # Saludo empieza deshabilitado — solo se activa desde hold de kSentarse
+        saludo_idx = next(
+            (i for i, (rid, _) in enumerate(self.ROUTINES) if rid == "kSaludo"), None)
+        if saludo_idx is not None:
+            self.routine_buttons[saludo_idx].setEnabled(False)
+            self.routine_buttons[saludo_idx].setStyleSheet("""
+                QPushButton { background-color:#2c3e50; color:#7f8c8d;
+                    border:1px solid #4a5568; border-radius:5px;
+                    font-size:11px; font-weight:bold; }
+                QPushButton:disabled { background-color:#2c3e50; color:#7f8c8d; }
+            """)
         routine_layout.addLayout(routine_btn_layout)
 
         self.launch_btn = QPushButton("▶ LANZAR")
@@ -1025,6 +1037,9 @@ class QuadControlGUI(QMainWindow):
             for i, btn in enumerate(self.routine_buttons):
                 btn.setChecked(i == self.routine_index)
             return
+        # No permitir seleccionar Saludo si el botón está deshabilitado.
+        if not self.routine_buttons[idx].isEnabled():
+            return
         self.routine_index = idx
         for i, btn in enumerate(self.routine_buttons):
             btn.setChecked(i == idx)
@@ -1233,9 +1248,9 @@ class QuadControlGUI(QMainWindow):
             self.robot_state.fault = status.get("fault", "")
             self.robot_state.connected = True
 
-            # Rutinas con hold_forever (kSentarse, kLevantarse):
+            # Rutinas con hold_forever (kSentarse, kLevantarse, kSaludo):
             # done nunca llega a true — se detectan por routine_active_id.
-            HOLD_ROUTINES = ("kSentarse", "kLevantarse")
+            HOLD_ROUTINES = ("kSentarse", "kLevantarse", "kSaludo")
 
             if self.robot_state.mode == "routine" and self.routine_active:
                 self.routine_was_active = True
@@ -1249,6 +1264,34 @@ class QuadControlGUI(QMainWindow):
                     self.routine_status_label.setText(f"⏸ Pose: {label}")
                     self.routine_status_label.setStyleSheet(
                         "color:#74b9ff; font-size:10px; font-weight:bold;")
+
+            # Habilitar/deshabilitar botón Saludo según estado del robot.
+            # Solo se puede lanzar desde el hold de kSentarse.
+            saludo_idx = next(
+                (i for i, (rid, _) in enumerate(self.ROUTINES) if rid == "kSaludo"),
+                None)
+            if saludo_idx is not None:
+                saludo_disponible = (
+                    self.routine_holding and
+                    self.routine_active_id == "kSentarse"
+                )
+                btn = self.routine_buttons[saludo_idx]
+                btn.setEnabled(saludo_disponible)
+                btn.setStyleSheet("""
+                    QPushButton { background-color:#2ecc71; color:#222f3e;
+                        border:2px solid #27ae60; border-radius:5px;
+                        font-size:11px; font-weight:bold; }
+                    QPushButton:checked { background-color:#feca57; color:#222f3e;
+                        border:2px solid #f9ca24; }
+                    QPushButton:hover { background-color:#27ae60; }
+                    QPushButton:disabled { background-color:#2c3e50; color:#7f8c8d;
+                        border:1px solid #4a5568; }
+                """ if saludo_disponible else """
+                    QPushButton { background-color:#2c3e50; color:#7f8c8d;
+                        border:1px solid #4a5568; border-radius:5px;
+                        font-size:11px; font-weight:bold; }
+                    QPushButton:disabled { background-color:#2c3e50; color:#7f8c8d; }
+                """)
 
             # Rutinas normales (kFlexion, kBaile): detectar fin via routine.done
             # en la telemetría. El controlador se queda en kRoutine con done=true
